@@ -14,6 +14,23 @@ A Windows desktop app (WPF, .NET 8) for viewing and batch-editing EXIF metadata 
 
 [`installer/output/EBME-Setup-1.0.3.exe`](installer/output/) is a self-contained Windows installer (built with [Inno Setup](https://jrsoftware.org/isinfo.php)) — no .NET installation needed on the target machine. Run it, follow the wizard, and it adds a Start Menu entry and an optional desktop shortcut. Rebuild it after a version bump with `installer\setup.iss` (requires Inno Setup's `ISCC.exe`).
 
+### Silent installation
+
+Every Inno Setup installer supports command-line switches for unattended installs (useful for scripted deployment):
+
+```
+EBME-Setup-1.0.3.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+- `/VERYSILENT` — no UI at all.
+- `/SUPPRESSMSGBOXES` — suppresses any message boxes (e.g. reboot prompts).
+- `/NORESTART` — never restart the machine, even if it asks.
+- `/DIR="C:\Some\Path"` — install to a specific folder instead of the default.
+- `/TASKS="desktopicon"` (or `/TASKS="!desktopicon"`) — force the desktop shortcut on (or off).
+- `/LOG="install.log"` — write an install log.
+
+Uninstalling silently works the same way, via the generated uninstaller: `"C:\Program Files\EXIF Batch Metadata Editor\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
+
 ## Ready-to-run binary
 
 The [`/bin`](bin/) folder in this repo has a pre-built, ready-to-run copy of the app (`ExifBatchEditor.exe` + its dependencies). It's the small "framework-dependent" build, so it requires the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) to already be installed on the machine running it — it will not run standalone on a machine with nothing installed. Download the folder's contents and run `ExifBatchEditor.exe`.
