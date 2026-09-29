@@ -1,4 +1,7 @@
-bin/
+# MSBuild's actual build output stays ignored (Debug/Release subfolders); bin/ itself
+# is tracked so the distributable binary can be committed there (see README).
+bin/Debug/
+bin/Release/
 obj/
 .vs/
 *.user

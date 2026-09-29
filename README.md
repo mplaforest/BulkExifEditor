@@ -10,6 +10,10 @@ A Windows desktop app (WPF, .NET 8) for viewing and batch-editing EXIF metadata 
 - Multi-file editing: select multiple files in the list and any tag edit, add, or removal in the grid is applied - and saved - to every selected file at once.
 - Double-click a file to open it in your system's default image viewer.
 
+## Ready-to-run binary
+
+The [`/bin`](bin/) folder in this repo has a pre-built, ready-to-run copy of the app (`ExifBatchEditor.exe` + its dependencies). It's the small "framework-dependent" build, so it requires the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) to already be installed on the machine running it — it will not run standalone on a machine with nothing installed (see "Publishing a standalone build" below for that). Download the folder's contents and run `ExifBatchEditor.exe`.
+
 ## Requirements
 
 - Windows 10/11
