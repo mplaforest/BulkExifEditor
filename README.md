@@ -1,4 +1,4 @@
-# EXIF Batch Editor
+# EXIF Batch Metadata Editor
 
 A Windows desktop app (WPF, .NET 8) for viewing and batch-editing EXIF metadata across multiple JPEG files at once, including GPS latitude, longitude, and altitude.
 
