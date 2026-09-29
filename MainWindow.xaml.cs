@@ -189,7 +189,7 @@ public partial class MainWindow : Window
 
     private void SaveEntries(IEnumerable<FileEntry> entries)
     {
-        int saved = 0;
+        var saved = new List<FileEntry>();
         var errors = new List<string>();
         var list = entries.ToList();
         foreach (var entry in list)
@@ -198,7 +198,7 @@ public partial class MainWindow : Window
             {
                 entry.Image.Save(entry.FilePath);
                 entry.IsDirty = false;
-                saved++;
+                saved.Add(entry);
             }
             catch (Exception ex)
             {
@@ -206,9 +206,12 @@ public partial class MainWindow : Window
             }
         }
 
-        StatusText.Text = $"Saved {saved} file(s).";
+        StatusText.Text = $"Saved {saved.Count} file(s).";
 
-        if (saved > 0)
+        if (saved.Count == 1)
+            MessageBox.Show(this, $"{saved[0].FileName} has been updated!",
+                "Save Changes", MessageBoxButton.OK, MessageBoxImage.Information);
+        else if (saved.Count > 1)
             MessageBox.Show(this, "All files have been updated!",
                 "Save Changes", MessageBoxButton.OK, MessageBoxImage.Information);
 
