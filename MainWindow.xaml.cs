@@ -231,6 +231,15 @@ public partial class MainWindow : Window
         RefreshCurrentTags();
     }
 
+    // Attribution tags shown first, always present as a real value or a blank editable
+    // placeholder - so bulk-filling Artist/Copyright across several selected files is as
+    // easy as typing into the row (same mechanism as the GPS fields below).
+    private static readonly (ExifTag Tag, IFD Ifd, string Name, string TypeName, string Example)[] AttributionTags =
+    {
+        (ExifTag.Artist, IFD.Zeroth, "Artist", "ExifAscii", "Jane Doe"),
+        (ExifTag.Copyright, IFD.Zeroth, "Copyright", "ExifAscii", "© 2026 Jane Doe"),
+    };
+
     // The six core GPS position tags, always shown in this fixed order (each value tag
     // immediately followed by its Ref tag) regardless of the order the file stores them
     // in, using the real saved value if present or a blank editable placeholder if not.
@@ -245,48 +254,54 @@ public partial class MainWindow : Window
         (ExifTag.GPSAltitudeRef, IFD.GPS, "GPSAltitudeRef", "ExifByte", ""),
     };
 
-    private static readonly HashSet<ExifTag> GpsPositionTagSet = GpsPositionTags.Select(p => p.Tag).ToHashSet();
+    private static readonly HashSet<ExifTag> PinnedTagSet =
+        AttributionTags.Select(p => p.Tag).Concat(GpsPositionTags.Select(p => p.Tag)).ToHashSet();
 
     private void RefreshCurrentTags()
     {
         CurrentTags.Clear();
         if (_currentEntry == null) return;
 
-        // Everything except the six GPS position tags, in the file's natural order.
-        // "Unknown"-named tags are unrecognized/manufacturer-specific entries (often
-        // MakerNote sub-tags) with no useful friendly meaning - skip them to declutter.
+        // Attribution tags first, always shown (real value or blank placeholder).
+        foreach (var attr in AttributionTags)
+            CurrentTags.Add(GetOrPlaceholderRow(attr));
+
+        // Everything except the pinned attribution/GPS tags above, in the file's natural
+        // order. "Unknown"-named tags are unrecognized/manufacturer-specific entries
+        // (often MakerNote sub-tags) with no useful friendly meaning - skip them to declutter.
         foreach (var prop in _currentEntry.Image.Properties)
         {
-            if (GpsPositionTagSet.Contains(prop.Tag)) continue;
+            if (PinnedTagSet.Contains(prop.Tag)) continue;
             if (prop.Name == "Unknown") continue;
             CurrentTags.Add(ToRow(prop, prop.Name));
         }
 
-        // The GPS position tags, always in the same fixed order. The library's own
-        // friendly-name lookup reports "Unknown" for some of these once they're real
-        // saved values (observed with GPSLatitudeRef/GPSLongitudeRef) - use our own
-        // name instead of prop.Name so that doesn't hide them.
+        // The GPS position tags, always in the same fixed order, at the end.
         foreach (var gps in GpsPositionTags)
+            CurrentTags.Add(GetOrPlaceholderRow(gps));
+    }
+
+    // The library's own friendly-name lookup reports "Unknown" for some pinned tags once
+    // they're real saved values (observed with GPSLatitudeRef/GPSLongitudeRef) - use our
+    // own name instead of prop.Name so that doesn't hide them.
+    private TagRow GetOrPlaceholderRow((ExifTag Tag, IFD Ifd, string Name, string TypeName, string Example) def)
+    {
+        if (_currentEntry!.Image.Properties.Contains(def.Tag))
         {
-            if (_currentEntry.Image.Properties.Contains(gps.Tag))
-            {
-                var prop = _currentEntry.Image.Properties.Get(gps.Tag);
-                CurrentTags.Add(ToRow(prop, gps.Name));
-            }
-            else
-            {
-                CurrentTags.Add(new TagRow
-                {
-                    Tag = gps.Tag,
-                    Ifd = gps.Ifd,
-                    Name = gps.Name,
-                    TypeName = gps.TypeName,
-                    ValueText = string.Empty,
-                    EditorKind = TagRow.GetEditorKind(gps.Tag),
-                    Example = gps.Example,
-                });
-            }
+            var prop = _currentEntry.Image.Properties.Get(def.Tag);
+            return ToRow(prop, def.Name);
         }
+
+        return new TagRow
+        {
+            Tag = def.Tag,
+            Ifd = def.Ifd,
+            Name = def.Name,
+            TypeName = def.TypeName,
+            ValueText = string.Empty,
+            EditorKind = TagRow.GetEditorKind(def.Tag),
+            Example = def.Example,
+        };
     }
 
     private static TagRow ToRow(ExifProperty prop, string name)
