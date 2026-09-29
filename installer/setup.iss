@@ -1,6 +1,6 @@
 #define MyAppName "EXIF Batch Metadata Editor"
 #define MyAppVersion "1.0.3"
-#define MyAppPublisher "Mark Laforest"
+#define MyAppPublisher "Mark LaForest"
 #define MyAppExeName "ExifBatchEditor.exe"
 
 [Setup]
@@ -12,7 +12,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=output
-OutputBaseFilename=EBME-Setup-{#MyAppVersion}
+OutputBaseFilename=EBME-Setup-{#MyAppVersion}-core
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

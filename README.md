@@ -12,24 +12,32 @@ A Windows desktop app (WPF, .NET 8) for viewing and batch-editing EXIF metadata 
 
 ## Installer
 
-[`installer/output/EBME-Setup-1.0.3.exe`](installer/output/) is a self-contained Windows installer (built with [Inno Setup](https://jrsoftware.org/isinfo.php)) — no .NET installation needed on the target machine. Run it, follow the wizard, and it adds a Start Menu entry and an optional desktop shortcut. Rebuild it after a version bump with `installer\setup.iss` (requires Inno Setup's `ISCC.exe`).
+[`installer/output/`](installer/output/) has two files, both needed together:
+
+- **`EBME-Setup-1.0.3.exe`** — the one to run/distribute. It's a thin wrapper with no payload of its own.
+- **`EBME-Setup-1.0.3-core.exe`** — the real self-contained installer (built with [Inno Setup](https://jrsoftware.org/isinfo.php); no .NET installation needed on the target machine). Must sit in the same folder as the wrapper.
+
+Run `EBME-Setup-1.0.3.exe`, follow the wizard, and it adds a Start Menu entry and an optional desktop shortcut.
+
+(Why two files: a setup.exe can't reliably copy-and-relaunch itself to add custom switch handling — the running exe's own file is effectively locked, and antivirus heuristics tend to flag a "setup" binary copying itself into temp and executing it as dropper-like behavior. The wrapper instead launches the separate, statically-named core installer, which sidesteps both problems.)
+
+Rebuild after a version bump with `installer\setup.iss` (the core) and `installer\wrapper.iss` (the wrapper) — compile both with Inno Setup's `ISCC.exe`, core first.
 
 ### Silent installation
 
-Every Inno Setup installer supports command-line switches for unattended installs (useful for scripted deployment):
+The wrapper accepts a plain **`/s`** switch for a fully silent, unattended install:
 
 ```
-EBME-Setup-1.0.3.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+EBME-Setup-1.0.3.exe /s
 ```
 
-- `/VERYSILENT` — no UI at all.
-- `/SUPPRESSMSGBOXES` — suppresses any message boxes (e.g. reboot prompts).
-- `/NORESTART` — never restart the machine, even if it asks.
+This is a convenience the wrapper adds — Inno Setup's own installers don't recognize `/s` natively, only `/SILENT`/`/VERYSILENT`. `/s` translates to those internally; any other arguments you pass alongside `/s` (e.g. `/DIR=`) are forwarded through as-is:
+
 - `/DIR="C:\Some\Path"` — install to a specific folder instead of the default.
 - `/TASKS="desktopicon"` (or `/TASKS="!desktopicon"`) — force the desktop shortcut on (or off).
 - `/LOG="install.log"` — write an install log.
 
-Uninstalling silently works the same way, via the generated uninstaller: `"C:\Program Files\EXIF Batch Metadata Editor\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
+Uninstalling silently uses the generated uninstaller directly (it's a plain Inno Setup binary, so it takes the native switches): `"C:\Program Files\EXIF Batch Metadata Editor\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
 
 ## Ready-to-run binary
 
