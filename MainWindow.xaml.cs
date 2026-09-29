@@ -277,18 +277,39 @@ public partial class MainWindow : Window
     private static string FormatValueText(ExifProperty prop, string typeName)
     {
         string raw = prop.ToString() ?? string.Empty;
-        if (typeName != "ExifURationalArray" && typeName != "GPSLatitudeLongitude")
-            return raw;
 
-        try
+        if (typeName == "ExifURationalArray" || typeName == "GPSLatitudeLongitude")
         {
-            var dms = PropertyBuilder.ParseThreeNumbers(raw);
-            return $"{dms[0]:0.###}° {dms[1]:0.###}' {dms[2]:0.###}\"";
+            try
+            {
+                var dms = PropertyBuilder.ParseThreeNumbers(raw);
+                return $"{dms[0]:0.###}° {dms[1]:0.###}' {dms[2]:0.###}\"";
+            }
+            catch
+            {
+                return raw;
+            }
         }
-        catch
+
+        // Single rational-valued tags (e.g. GPSAltitude, FNumber, ExposureTime, FocalLength)
+        // print as a raw "numerator/denominator" fraction by default (e.g. "110051/50"),
+        // which reads as a huge, meaningless number. Show the computed decimal instead -
+        // still round-trips through PropertyBuilder.ParseFraction if edited.
+        if (typeName == "ExifURational" || typeName == "ExifSRational")
         {
-            return raw;
+            try
+            {
+                var (n, d) = PropertyBuilder.ParseFraction(raw);
+                if (d == 0) return raw;
+                return ((double)n / d).ToString("0.####", CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return raw;
+            }
         }
+
+        return raw;
     }
 
     private void TagGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
