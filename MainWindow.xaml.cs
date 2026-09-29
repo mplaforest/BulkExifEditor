@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -32,7 +33,7 @@ public partial class MainWindow : Window
 
     // --- File list management ---
 
-    private void AddFiles_Click(object sender, RoutedEventArgs e)
+    private async void AddFiles_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
@@ -41,10 +42,10 @@ public partial class MainWindow : Window
             Filter = "JPEG Images|*.jpg;*.jpeg",
         };
         if (dlg.ShowDialog(this) == true)
-            LoadFiles(dlg.FileNames);
+            await LoadFilesAsync(dlg.FileNames);
     }
 
-    private void AddFolder_Click(object sender, RoutedEventArgs e)
+    private async void AddFolder_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new Microsoft.Win32.OpenFolderDialog
         {
@@ -87,7 +88,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        LoadFiles(files);
+        await LoadFilesAsync(files);
     }
 
     private void FileListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -108,19 +109,48 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LoadFiles(IEnumerable<string> paths)
+    private async Task LoadFilesAsync(IEnumerable<string> paths)
     {
+        var pathList = paths.ToList();
+        if (pathList.Count == 0) return;
+
+        AddFilesButton.IsEnabled = false;
+        AddFolderButton.IsEnabled = false;
+        LoadingPanel.Visibility = Visibility.Visible;
+        LoadingProgressBar.Maximum = pathList.Count;
+        LoadingProgressBar.Value = 0;
+
         var errors = new List<string>();
-        foreach (var path in paths)
+        int completed = 0;
+
+        try
         {
-            try
+            foreach (var path in pathList)
             {
-                Files.Add(new FileEntry(path));
+                LoadingStatusText.Text = $"Loading {completed + 1} of {pathList.Count}: {Path.GetFileName(path)}";
+
+                try
+                {
+                    // Parsing EXIF and decoding/resizing the thumbnail are the slow parts -
+                    // run each off the UI thread so the window stays responsive and the
+                    // progress bar can actually repaint between files.
+                    var entry = await Task.Run(() => new FileEntry(path));
+                    Files.Add(entry);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{Path.GetFileName(path)}: {ex.Message}");
+                }
+
+                completed++;
+                LoadingProgressBar.Value = completed;
             }
-            catch (Exception ex)
-            {
-                errors.Add($"{Path.GetFileName(path)}: {ex.Message}");
-            }
+        }
+        finally
+        {
+            LoadingPanel.Visibility = Visibility.Collapsed;
+            AddFilesButton.IsEnabled = true;
+            AddFolderButton.IsEnabled = true;
         }
 
         if (errors.Count > 0)
