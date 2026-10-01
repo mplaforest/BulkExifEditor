@@ -430,18 +430,24 @@ public partial class MainWindow : Window
     // loses focus; a dropdown commits as soon as a selection is made.
     private void ValueEditor_LostFocus(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: TagRow row })
-            CommitRowEdit(row);
+        if (sender is not FrameworkElement { DataContext: TagRow row }) return;
+
+        // Temporary diagnostic: if this still fires unexpectedly (e.g. on the very first
+        // keystroke into an empty field), this records what actually took focus - shown
+        // in the error dialog itself if the commit fails, so the next report has hard
+        // evidence instead of another guess.
+        string newFocusTarget = Keyboard.FocusedElement?.GetType().Name ?? "(none)";
+        CommitRowEdit(row, $"LostFocus -> {newFocusTarget}");
     }
 
     private void RefComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.AddedItems.Count == 0) return;
         if (sender is FrameworkElement { DataContext: TagRow row })
-            CommitRowEdit(row);
+            CommitRowEdit(row, "ComboBox SelectionChanged");
     }
 
-    private void CommitRowEdit(TagRow row)
+    private void CommitRowEdit(TagRow row, string triggeredBy = "")
     {
         string newText = row.ValueText;
 
@@ -489,7 +495,8 @@ public partial class MainWindow : Window
             // Leave the typed text in place rather than rebuilding the grid (which tears
             // down and regenerates every row's controls) - the user can just fix it and
             // the field will lose focus again to retry.
-            MessageBox.Show(this, $"Could not parse value: {errors.FirstOrDefault()}", "Invalid value",
+            string diag = string.IsNullOrEmpty(triggeredBy) ? "" : $"\n\n[debug: triggered by {triggeredBy}, typed text was '{newText}']";
+            MessageBox.Show(this, $"Could not parse value: {errors.FirstOrDefault()}{diag}", "Invalid value",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }

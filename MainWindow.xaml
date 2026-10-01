@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
-        Title="EXIF Batch Metadata Editor v1.0.8" Height="700" Width="1100"
+        Title="EXIF Batch Metadata Editor v1.0.9" Height="700" Width="1100"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -89,7 +89,7 @@
                                  separate "click to enter edit mode" template) - this makes single-
                                  click-to-type an architectural guarantee rather than something that
                                  depends on DataGrid's edit-mode timing, which proved unreliable. -->
-                            <DataGridTemplateColumn Header="Value" Width="*" IsReadOnly="True">
+                            <DataGridTemplateColumn Header="Value" Width="*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Grid>
@@ -99,12 +99,12 @@
                                             <TextBlock Text="{Binding Example, StringFormat='e.g. {0}'}" Padding="4,0"
                                                        VerticalAlignment="Center" Foreground="Gray" FontStyle="Italic"
                                                        IsHitTestVisible="False">
-                                                <TextBlock.Visibility>
+                                                <TextBlock.Opacity>
                                                     <MultiBinding Converter="{StaticResource PlaceholderVisibilityConverter}">
                                                         <Binding Path="ValueText"/>
                                                         <Binding Path="Example"/>
                                                     </MultiBinding>
-                                                </TextBlock.Visibility>
+                                                </TextBlock.Opacity>
                                             </TextBlock>
                                             <ComboBox x:Name="LatRefEditor" Visibility="Collapsed"
                                                       SelectedValuePath="Tag" SelectionChanged="RefComboBox_SelectionChanged"
