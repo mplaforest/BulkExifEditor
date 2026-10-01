@@ -486,10 +486,9 @@ public partial class MainWindow : Window
 
         if (applied == 0)
         {
-            // Revert the box to whatever's actually on disk (or blank) rather than
-            // leaving invalid text sitting there. RefreshCurrentTags fully rebuilds
-            // CurrentTags from the primary file's real properties, including this row.
-            RefreshCurrentTags();
+            // Leave the typed text in place rather than rebuilding the grid (which tears
+            // down and regenerates every row's controls) - the user can just fix it and
+            // the field will lose focus again to retry.
             MessageBox.Show(this, $"Could not parse value: {errors.FirstOrDefault()}", "Invalid value",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
