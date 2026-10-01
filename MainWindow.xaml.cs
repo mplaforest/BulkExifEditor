@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using ExifBatchEditor.Models;
 using ExifLibrary;
 
@@ -395,35 +394,26 @@ public partial class MainWindow : Window
     }
 
     // WPF's DataGrid normally needs row-select, then cell-select, then a further click/
-    // double-click to actually enter edit mode - three clicks in practice. Jump straight
-    // to edit mode on the very first click on an editable cell instead.
-    private void TagGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    // double-click to actually enter edit mode - three clicks in practice. CurrentCell
+    // changes synchronously as soon as the grid processes a click on a new cell, so
+    // beginning edit right here (rather than guessing at timing with a dispatched
+    // callback, which caused a reentrancy crash) reliably drops it to a single click.
+    private void TagGrid_CurrentCellChanged(object sender, EventArgs e)
     {
-        var dep = e.OriginalSource as DependencyObject;
-        while (dep != null && dep is not DataGridCell)
-            dep = VisualTreeHelper.GetParent(dep);
-
-        if (dep is not DataGridCell { IsReadOnly: false, IsEditing: false } cell) return;
-
-        // Let this click's normal row/cell selection happen first, then begin editing
-        // on the next UI pass rather than fighting the DataGrid's own click handling.
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            cell.IsSelected = true;
-            TagGrid.CurrentCell = new DataGridCellInfo(cell.DataContext, cell.Column);
-            TagGrid.BeginEdit();
-        }), System.Windows.Threading.DispatcherPriority.Background);
+        var column = TagGrid.CurrentCell.Column;
+        if (column == null || column.IsReadOnly) return;
+        TagGrid.BeginEdit();
     }
 
     // Clicking a dropdown item inside a grid cell can close the dropdown and move focus
-    // out of the cell before the SelectedValue binding has actually pushed the new value
-    // back to row.ValueText, so CellEditEnding can fire with the stale pre-click value.
-    // Commit explicitly, right here, once the selection itself has definitely changed.
+    // out of the cell before the grid's own focus-loss handling commits the edit, so
+    // CellEditEnding can fire with the stale pre-click value. Commit explicitly here
+    // instead - synchronously, since the TwoWay binding has already pushed the new
+    // selection into row.ValueText by the time this event fires.
     private void RefComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.AddedItems.Count == 0) return;
-        Dispatcher.BeginInvoke(new Action(() => TagGrid.CommitEdit(DataGridEditingUnit.Cell, true)),
-            System.Windows.Threading.DispatcherPriority.Background);
+        TagGrid.CommitEdit(DataGridEditingUnit.Cell, true);
     }
 
     private void TagGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
@@ -473,8 +463,15 @@ public partial class MainWindow : Window
 
         if (applied == 0)
         {
-            MessageBox.Show(this, $"Could not parse value: {errors.FirstOrDefault()}", "Invalid value",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            // Showing a MessageBox synchronously here would pump a nested message loop
+            // while this handler is still on the stack mid-cancel - and the click that
+            // triggered this commit may have already queued a Background-priority
+            // BeginEdit (see TagGrid_PreviewMouseLeftButtonDown) for whatever cell the
+            // user clicked next. If that reentrantly runs against the grid before this
+            // handler finishes, it crashes the app. Defer the dialog until afterwards.
+            string message = $"Could not parse value: {errors.FirstOrDefault()}";
+            Dispatcher.BeginInvoke(new Action(() =>
+                MessageBox.Show(this, message, "Invalid value", MessageBoxButton.OK, MessageBoxImage.Warning)));
             e.Cancel = true;
             return;
         }
@@ -485,8 +482,11 @@ public partial class MainWindow : Window
         {
             StatusText.Text = $"Applied \"{row.Name}\" to {applied} of {targets.Count} file(s).";
             if (errors.Count > 0)
-                MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
-                    "Apply errors", MessageBoxButton.OK, MessageBoxImage.Warning);
+            {
+                string message = "Some files had problems:\n" + string.Join("\n", errors);
+                Dispatcher.BeginInvoke(new Action(() =>
+                    MessageBox.Show(this, message, "Apply errors", MessageBoxButton.OK, MessageBoxImage.Warning)));
+            }
         }
     }
 
