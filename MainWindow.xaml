@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
-        Title="EXIF Batch Metadata Editor v1.0.3" Height="700" Width="1100"
+        Title="EXIF Batch Metadata Editor v1.0.4" Height="700" Width="1100"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -43,10 +43,12 @@
 
             <!-- File list -->
             <DockPanel Grid.Column="0" Margin="0,0,6,0">
-                <TextBlock DockPanel.Dock="Top" Text="Files (multi-select to edit tags across all of them at once)" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap"/>
+                <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap"
+                           Text="Files (drag and drop files/folders here - multi-select to edit tags across all of them at once)"/>
                 <ListBox x:Name="FileListBox" SelectionMode="Extended"
                          SelectionChanged="FileListBox_SelectionChanged"
-                         MouseDoubleClick="FileListBox_MouseDoubleClick">
+                         MouseDoubleClick="FileListBox_MouseDoubleClick"
+                         AllowDrop="True" DragEnter="FileListBox_DragEnter" Drop="FileListBox_Drop">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal" Margin="0,2">
@@ -74,9 +76,10 @@
                      and saves it to every selected file. -->
                 <DockPanel Grid.Row="0">
                     <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap"
-                               Text="Tags (double-click Value to edit - with multiple files selected, edits apply to all of them)"/>
+                               Text="Tags (click Value to edit - with multiple files selected, edits apply to all of them)"/>
                     <DataGrid x:Name="TagGrid" AutoGenerateColumns="False" CanUserAddRows="False"
                               CellEditEnding="TagGrid_CellEditEnding" SelectionMode="Extended"
+                              PreviewMouseLeftButtonDown="TagGrid_PreviewMouseLeftButtonDown"
                               AlternationCount="2" AlternatingRowBackground="#FFEDEDED">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Name" Binding="{Binding Name}" IsReadOnly="True" Width="180"/>
@@ -106,19 +109,19 @@
                                             <TextBox x:Name="TextEditor"
                                                      Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                             <ComboBox x:Name="LatRefEditor" Visibility="Collapsed"
-                                                      SelectedValuePath="Tag"
+                                                      SelectedValuePath="Tag" SelectionChanged="RefComboBox_SelectionChanged"
                                                       SelectedValue="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                                                 <ComboBoxItem Content="North" Tag="N"/>
                                                 <ComboBoxItem Content="South" Tag="S"/>
                                             </ComboBox>
                                             <ComboBox x:Name="LonRefEditor" Visibility="Collapsed"
-                                                      SelectedValuePath="Tag"
+                                                      SelectedValuePath="Tag" SelectionChanged="RefComboBox_SelectionChanged"
                                                       SelectedValue="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                                                 <ComboBoxItem Content="East" Tag="E"/>
                                                 <ComboBoxItem Content="West" Tag="W"/>
                                             </ComboBox>
                                             <ComboBox x:Name="AltRefEditor" Visibility="Collapsed"
-                                                      SelectedValuePath="Tag"
+                                                      SelectedValuePath="Tag" SelectionChanged="RefComboBox_SelectionChanged"
                                                       SelectedValue="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                                                 <ComboBoxItem Content="Above Sea Level" Tag="0"/>
                                                 <ComboBoxItem Content="Below Sea Level" Tag="1"/>

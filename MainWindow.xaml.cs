@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using ExifBatchEditor.Models;
 using ExifLibrary;
 
@@ -107,6 +108,39 @@ public partial class MainWindow : Window
             MessageBox.Show(this, $"Could not open {entry.FileName}: {ex.Message}",
                 "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void FileListBox_DragEnter(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void FileListBox_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        var dropped = (string[])e.Data.GetData(DataFormats.FileDrop);
+
+        bool IsJpeg(string p) => p.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                  p.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
+
+        var files = new List<string>();
+        foreach (var path in dropped)
+        {
+            if (Directory.Exists(path))
+                files.AddRange(Directory.EnumerateFiles(path, "*.*", SearchOption.TopDirectoryOnly).Where(IsJpeg));
+            else if (IsJpeg(path))
+                files.Add(path);
+        }
+
+        if (files.Count == 0)
+        {
+            MessageBox.Show(this, "No .jpg/.jpeg files found in what was dropped.\n\n(Subfolders are not searched.)",
+                "Nothing to load", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        await LoadFilesAsync(files);
     }
 
     private async Task LoadFilesAsync(IEnumerable<string> paths)
@@ -358,6 +392,38 @@ public partial class MainWindow : Window
         }
 
         return raw;
+    }
+
+    // WPF's DataGrid normally needs row-select, then cell-select, then a further click/
+    // double-click to actually enter edit mode - three clicks in practice. Jump straight
+    // to edit mode on the very first click on an editable cell instead.
+    private void TagGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var dep = e.OriginalSource as DependencyObject;
+        while (dep != null && dep is not DataGridCell)
+            dep = VisualTreeHelper.GetParent(dep);
+
+        if (dep is not DataGridCell { IsReadOnly: false, IsEditing: false } cell) return;
+
+        // Let this click's normal row/cell selection happen first, then begin editing
+        // on the next UI pass rather than fighting the DataGrid's own click handling.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            cell.IsSelected = true;
+            TagGrid.CurrentCell = new DataGridCellInfo(cell.DataContext, cell.Column);
+            TagGrid.BeginEdit();
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    // Clicking a dropdown item inside a grid cell can close the dropdown and move focus
+    // out of the cell before the SelectedValue binding has actually pushed the new value
+    // back to row.ValueText, so CellEditEnding can fire with the stale pre-click value.
+    // Commit explicitly, right here, once the selection itself has definitely changed.
+    private void RefComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count == 0) return;
+        Dispatcher.BeginInvoke(new Action(() => TagGrid.CommitEdit(DataGridEditingUnit.Cell, true)),
+            System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private void TagGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
