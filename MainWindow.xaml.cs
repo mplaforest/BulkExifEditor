@@ -341,18 +341,47 @@ public partial class MainWindow : Window
     private static TagRow ToRow(ExifProperty prop, string name)
     {
         string typeName = prop.GetType().Name;
-        string valueText = FormatValueText(prop, typeName);
+        var editorKind = TagRow.GetEditorKind(prop.Tag);
+        string valueText;
+
+        if (editorKind != TagEditorKind.Text)
+        {
+            // Ref/dropdown fields (GPSLatitudeRef/LongitudeRef/AltitudeRef): once saved,
+            // the library re-parses these as an ExifEnumProperty<T> wrapper with a
+            // friendly name like "North"/"AboveSeaLevel" - a type PropertyBuilder can't
+            // reconstruct, which broke editing a field a second time. Always write these
+            // back using our own known-good type instead of trusting prop.GetType(), and
+            // normalize the display text to the raw code the dropdown's items use.
+            typeName = GpsPositionTags.First(g => g.Tag == prop.Tag).TypeName;
+            valueText = NormalizeRefValue(prop.Tag, prop.ToString() ?? string.Empty);
+        }
+        else
+        {
+            valueText = FormatValueText(prop, typeName);
+        }
+
         return new TagRow
         {
             Tag = prop.Tag,
             Ifd = prop.IFD,
             Name = name,
             TypeName = typeName,
-            EditorKind = TagRow.GetEditorKind(prop.Tag),
+            EditorKind = editorKind,
             ValueText = valueText,
             OriginalValueText = valueText,
         };
     }
+
+    private static string NormalizeRefValue(ExifTag tag, string raw) => (tag, raw) switch
+    {
+        (ExifTag.GPSLatitudeRef, "North") => "N",
+        (ExifTag.GPSLatitudeRef, "South") => "S",
+        (ExifTag.GPSLongitudeRef, "East") => "E",
+        (ExifTag.GPSLongitudeRef, "West") => "W",
+        (ExifTag.GPSAltitudeRef, "AboveSeaLevel") => "0",
+        (ExifTag.GPSAltitudeRef, "BelowSeaLevel") => "1",
+        _ => raw, // already a raw code (e.g. freshly-set "N") or unrecognized - pass through
+    };
 
     // GPS coordinates are stored as a 3-value rational array; the library's own ToString()
     // for that raw type looks like "[44/1 66/1 641/7]", which isn't how people read
