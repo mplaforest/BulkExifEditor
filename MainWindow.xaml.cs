@@ -332,6 +332,7 @@ public partial class MainWindow : Window
             Name = def.Name,
             TypeName = def.TypeName,
             ValueText = string.Empty,
+            OriginalValueText = string.Empty,
             EditorKind = TagRow.GetEditorKind(def.Tag),
             Example = def.Example,
         };
@@ -340,6 +341,7 @@ public partial class MainWindow : Window
     private static TagRow ToRow(ExifProperty prop, string name)
     {
         string typeName = prop.GetType().Name;
+        string valueText = FormatValueText(prop, typeName);
         return new TagRow
         {
             Tag = prop.Tag,
@@ -347,7 +349,8 @@ public partial class MainWindow : Window
             Name = name,
             TypeName = typeName,
             EditorKind = TagRow.GetEditorKind(prop.Tag),
-            ValueText = FormatValueText(prop, typeName),
+            ValueText = valueText,
+            OriginalValueText = valueText,
         };
     }
 
@@ -393,38 +396,29 @@ public partial class MainWindow : Window
         return raw;
     }
 
-    // WPF's DataGrid normally needs row-select, then cell-select, then a further click/
-    // double-click to actually enter edit mode - three clicks in practice. CurrentCell
-    // changes synchronously as soon as the grid processes a click on a new cell, so
-    // beginning edit right here (rather than guessing at timing with a dispatched
-    // callback, which caused a reentrancy crash) reliably drops it to a single click.
-    private void TagGrid_CurrentCellChanged(object sender, EventArgs e)
+    // The Value column's TextBox/ComboBox editors are always live (see MainWindow.xaml) -
+    // there's no separate DataGrid "edit mode" to juggle. A text field commits when it
+    // loses focus; a dropdown commits as soon as a selection is made.
+    private void ValueEditor_LostFocus(object sender, RoutedEventArgs e)
     {
-        var column = TagGrid.CurrentCell.Column;
-        if (column == null || column.IsReadOnly) return;
-        TagGrid.BeginEdit();
+        if (sender is FrameworkElement { DataContext: TagRow row })
+            CommitRowEdit(row);
     }
 
-    // Clicking a dropdown item inside a grid cell can close the dropdown and move focus
-    // out of the cell before the grid's own focus-loss handling commits the edit, so
-    // CellEditEnding can fire with the stale pre-click value. Commit explicitly here
-    // instead - synchronously, since the TwoWay binding has already pushed the new
-    // selection into row.ValueText by the time this event fires.
     private void RefComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.AddedItems.Count == 0) return;
-        TagGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+        if (sender is FrameworkElement { DataContext: TagRow row })
+            CommitRowEdit(row);
     }
 
-    private void TagGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
+    private void CommitRowEdit(TagRow row)
     {
-        if (e.EditAction != DataGridEditAction.Commit) return;
-        if (e.Row.Item is not TagRow row) return;
-
-        // The Value column is a template (plain TextBox for most tags, a ComboBox for the
-        // GPS ref tags) bound TwoWay with UpdateSourceTrigger=PropertyChanged, so row.ValueText
-        // already reflects whatever was typed/selected by the time this event fires.
         string newText = row.ValueText;
+
+        // Nothing actually changed (e.g. the box merely gained and lost focus) - skip
+        // the parse/save work entirely rather than re-saving an unchanged value.
+        if (newText == row.OriginalValueText) return;
 
         // A blank placeholder row (e.g. an unfilled GPS field) clicked into and left empty
         // shouldn't nag with a parse error - just leave it blank.
@@ -463,30 +457,27 @@ public partial class MainWindow : Window
 
         if (applied == 0)
         {
-            // Showing a MessageBox synchronously here would pump a nested message loop
-            // while this handler is still on the stack mid-cancel - and the click that
-            // triggered this commit may have already queued a Background-priority
-            // BeginEdit (see TagGrid_PreviewMouseLeftButtonDown) for whatever cell the
-            // user clicked next. If that reentrantly runs against the grid before this
-            // handler finishes, it crashes the app. Defer the dialog until afterwards.
-            string message = $"Could not parse value: {errors.FirstOrDefault()}";
-            Dispatcher.BeginInvoke(new Action(() =>
-                MessageBox.Show(this, message, "Invalid value", MessageBoxButton.OK, MessageBoxImage.Warning)));
-            e.Cancel = true;
+            // Revert the box to whatever's actually on disk (or blank) rather than
+            // leaving invalid text sitting there. RefreshCurrentTags fully rebuilds
+            // CurrentTags from the primary file's real properties, including this row.
+            RefreshCurrentTags();
+            MessageBox.Show(this, $"Could not parse value: {errors.FirstOrDefault()}", "Invalid value",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-
-        row.ValueText = newText;
 
         if (multi)
         {
             StatusText.Text = $"Applied \"{row.Name}\" to {applied} of {targets.Count} file(s).";
             if (errors.Count > 0)
-            {
-                string message = "Some files had problems:\n" + string.Join("\n", errors);
-                Dispatcher.BeginInvoke(new Action(() =>
-                    MessageBox.Show(this, message, "Apply errors", MessageBoxButton.OK, MessageBoxImage.Warning)));
-            }
+                MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
+                    "Apply errors", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        else
+        {
+            // Re-format the single-file display value (e.g. normalizing GPS "D M S" input).
+            row.ValueText = newText;
+            row.OriginalValueText = newText;
         }
     }
 
