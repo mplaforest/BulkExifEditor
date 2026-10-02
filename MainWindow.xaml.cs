@@ -428,16 +428,28 @@ public partial class MainWindow : Window
     // The Value column's TextBox/ComboBox editors are always live (see MainWindow.xaml) -
     // there's no separate DataGrid "edit mode" to juggle. A text field commits when it
     // loses focus; a dropdown commits as soon as a selection is made.
+    // Temporary diagnostics: timestamp when a field gains focus, per-row, so LostFocus
+    // can report how long it actually had focus. If it fires within ~100ms of GotFocus,
+    // that's proof it was triggered by something other than the user clicking/tabbing
+    // away (no one reacts that fast) - most likely WPF recycling the cell's container
+    // mid-edit. Shown directly in the error dialog if the commit fails.
+    private readonly Dictionary<TagRow, DateTime> _editorFocusedAt = new();
+
+    private void ValueEditor_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: TagRow row })
+            _editorFocusedAt[row] = DateTime.Now;
+    }
+
     private void ValueEditor_LostFocus(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: TagRow row }) return;
 
-        // Temporary diagnostic: if this still fires unexpectedly (e.g. on the very first
-        // keystroke into an empty field), this records what actually took focus - shown
-        // in the error dialog itself if the commit fails, so the next report has hard
-        // evidence instead of another guess.
         string newFocusTarget = Keyboard.FocusedElement?.GetType().Name ?? "(none)";
-        CommitRowEdit(row, $"LostFocus -> {newFocusTarget}");
+        string elapsed = _editorFocusedAt.TryGetValue(row, out var focusedAt)
+            ? $"{(DateTime.Now - focusedAt).TotalMilliseconds:F0}ms since focused"
+            : "no GotFocus recorded";
+        CommitRowEdit(row, $"LostFocus -> {newFocusTarget} ({elapsed})");
     }
 
     private void RefComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
