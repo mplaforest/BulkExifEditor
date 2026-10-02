@@ -131,6 +131,50 @@ public partial class MainWindow : Window
         }
     }
 
+    private void FileNameEditor_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb) tb.SelectAll();
+    }
+
+    private void FileNameEditor_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is not TextBox tb || tb.DataContext is not FileEntry entry) return;
+        CommitRename(entry, tb);
+    }
+
+    private void FileNameEditor_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox tb || tb.DataContext is not FileEntry entry) return;
+
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            CommitRename(entry, tb);
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            tb.Text = entry.FileName;
+            Keyboard.ClearFocus();
+        }
+    }
+
+    private void CommitRename(FileEntry entry, TextBox tb)
+    {
+        string newName = tb.Text;
+        if (newName == entry.FileName) return;
+
+        string? error = entry.Rename(newName);
+        if (error != null)
+        {
+            MessageBox.Show(this, error, "Rename failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            tb.Text = entry.FileName;
+            return;
+        }
+
+        ShowStatus($"Renamed to {entry.FileName}.");
+    }
+
     private void FileListBox_DragEnter(object sender, DragEventArgs e)
     {
         e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;

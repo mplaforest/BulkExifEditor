@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ExifLibrary;
@@ -14,7 +15,7 @@ public class FileEntry : INotifyPropertyChanged
 
     private bool _isDirty;
 
-    public string FilePath { get; }
+    public string FilePath { get; private set; }
     public string FileName => Path.GetFileName(FilePath);
     public ImageFile Image { get; private set; }
     public BitmapSource? Thumbnail { get; }
@@ -109,6 +110,65 @@ public class FileEntry : INotifyPropertyChanged
         var group = new TransformGroup();
         foreach (var t in transforms) group.Children.Add(t);
         return group;
+    }
+
+    // Renames the file on disk and updates FilePath/FileName to match. Returns an
+    // error message on failure (invalid name, collision, locked file) or null on success.
+    public string? Rename(string newName)
+    {
+        newName = newName.Trim();
+        if (newName.Length == 0)
+            return "Filename cannot be empty.";
+
+        if (!Path.HasExtension(newName))
+            newName += Path.GetExtension(FilePath);
+
+        if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            return "Filename contains invalid characters.";
+
+        if (string.Equals(newName, FileName, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        string dir = Path.GetDirectoryName(FilePath) ?? "";
+        string newPath = Path.Combine(dir, newName);
+
+        if (File.Exists(newPath))
+            return $"A file named \"{newName}\" already exists in this folder.";
+
+        try
+        {
+            MoveWithRetry(FilePath, newPath);
+        }
+        catch (Exception ex)
+        {
+            return $"Could not rename: {ex.Message}";
+        }
+
+        FilePath = newPath;
+        OnPropertyChanged(nameof(FilePath));
+        OnPropertyChanged(nameof(FileName));
+        OnPropertyChanged(nameof(DisplayName));
+        return null;
+    }
+
+    // Mirrors the save-retry pattern elsewhere in this app: a rename can transiently
+    // fail with IOException if antivirus/cloud-sync briefly holds the file right after
+    // it was loaded or saved.
+    private static void MoveWithRetry(string oldPath, string newPath)
+    {
+        const int maxAttempts = 4;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                File.Move(oldPath, newPath);
+                return;
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(150 * attempt);
+            }
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
