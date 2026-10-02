@@ -541,9 +541,12 @@ public partial class MainWindow : Window
             row.OriginalValueText = newText;
         }
 
+        // Show the literal committed value, not just a generic confirmation - if what's
+        // in the file after this is ever reported wrong again, this is the quickest way
+        // to tell whether the commit itself had bad data or the save/reload path lost it.
         StatusText.Text = multi
-            ? $"Applied \"{row.Name}\" to {applied} of {targets.Count} file(s) and saved."
-            : $"Saved {row.Name} to {targets[0].FileName}.";
+            ? $"Applied \"{row.Name}\" = '{newText}' to {applied} of {targets.Count} file(s) and saved."
+            : $"Saved {row.Name} = '{newText}' to {targets[0].FileName}.";
 
         if (errors.Count > 0)
             MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
