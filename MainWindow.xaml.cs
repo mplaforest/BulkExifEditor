@@ -229,7 +229,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                entry.Image.Save(entry.FilePath);
+                SaveWithRetry(entry);
                 entry.IsDirty = false;
                 saved.Add(entry);
             }
@@ -478,6 +478,27 @@ public partial class MainWindow : Window
         CommitRowEdit(row, "ComboBox SelectionChanged");
     }
 
+    // Saving can transiently fail with a sharing violation if something else briefly
+    // has the file open right after a write (antivirus real-time scanning, cloud sync,
+    // Windows Search indexing - all common on files outside the local disk). Retry a
+    // few times with short pauses before giving up, rather than failing on the first hit.
+    private static void SaveWithRetry(FileEntry entry)
+    {
+        const int maxAttempts = 4;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                entry.Image.Save(entry.FilePath);
+                return;
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                System.Threading.Thread.Sleep(150 * attempt);
+            }
+        }
+    }
+
     private void CommitRowEdit(TagRow row, string triggeredBy = "")
     {
         string newText = row.ValueText;
@@ -494,16 +515,30 @@ public partial class MainWindow : Window
         if (targets.Count == 0) return;
         bool multi = targets.Count > 1;
 
-        var errors = new List<string>();
+        // Tracked separately so the error dialog says the right thing - a save failure
+        // (e.g. a transient file lock) was previously mislabeled as "Could not parse
+        // value" just because both stages shared one error list.
+        var parseErrors = new List<string>();
+        var saveErrors = new List<string>();
         int applied = 0;
 
         foreach (var entry in targets)
         {
+            ExifProperty newProp;
             try
             {
                 // Build a fresh property instance per file rather than sharing one object
                 // across unrelated ImageFile.Properties collections.
-                var newProp = PropertyBuilder.Build(row.Tag, row.TypeName, newText);
+                newProp = PropertyBuilder.Build(row.Tag, row.TypeName, newText);
+            }
+            catch (Exception ex)
+            {
+                parseErrors.Add($"{entry.FileName}: {ex.Message}");
+                continue;
+            }
+
+            try
+            {
                 entry.Image.Properties.Set(newProp);
                 entry.IsDirty = true;
 
@@ -511,14 +546,14 @@ public partial class MainWindow : Window
                 // previously only multi-file edits auto-saved, which meant a single-file
                 // edit just sat as an unsaved "*" until a separate Save Changes click.
                 // That inconsistency repeatedly looked like "this field isn't saving".
-                entry.Image.Save(entry.FilePath);
+                SaveWithRetry(entry);
                 entry.IsDirty = false;
 
                 applied++;
             }
             catch (Exception ex)
             {
-                errors.Add($"{entry.FileName}: {ex.Message}");
+                saveErrors.Add($"{entry.FileName}: {ex.Message}");
             }
         }
 
@@ -528,10 +563,15 @@ public partial class MainWindow : Window
             // down and regenerates every row's controls) - the user can just fix it and
             // the field will lose focus again to retry.
             string diag = string.IsNullOrEmpty(triggeredBy) ? "" : $"\n\n[debug: triggered by {triggeredBy}, typed text was '{newText}']";
-            MessageBox.Show(this, $"Could not parse value: {errors.FirstOrDefault()}{diag}", "Invalid value",
+            string message = parseErrors.Count > 0
+                ? $"Could not parse value: {parseErrors.FirstOrDefault()}"
+                : $"Could not save: {saveErrors.FirstOrDefault()}";
+            MessageBox.Show(this, $"{message}{diag}", parseErrors.Count > 0 ? "Invalid value" : "Save failed",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+
+        var errors = parseErrors.Concat(saveErrors).ToList();
 
         // Re-format the display value (e.g. normalizing GPS "D M S" input) for single-file
         // edits; multi-file edits get a fresh row from the next RefreshCurrentTags instead.
@@ -581,7 +621,7 @@ public partial class MainWindow : Window
                 entry.IsDirty = true;
 
                 // Always save immediately, same as CommitRowEdit - see its comment for why.
-                entry.Image.Save(entry.FilePath);
+                SaveWithRetry(entry);
                 entry.IsDirty = false;
 
                 applied++;
@@ -624,7 +664,7 @@ public partial class MainWindow : Window
                 entry.IsDirty = true;
 
                 // Always save immediately, same as CommitRowEdit - see its comment for why.
-                entry.Image.Save(entry.FilePath);
+                SaveWithRetry(entry);
                 entry.IsDirty = false;
 
                 applied++;
