@@ -455,8 +455,18 @@ public partial class MainWindow : Window
     private void RefComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.AddedItems.Count == 0) return;
-        if (sender is FrameworkElement { DataContext: TagRow row })
-            CommitRowEdit(row, "ComboBox SelectionChanged");
+        if (sender is not FrameworkElement { DataContext: TagRow row } editor) return;
+
+        // All three ref dropdowns share the same ValueText binding as the row's text box
+        // (see MainWindow.xaml), so typing a character that happens to match one of a
+        // *different*, currently-invisible dropdown's item Tag (e.g. a stray "1" matching
+        // AltRefEditor's "Below Sea Level") silently reselects it there too and fires this
+        // same event - even though it's hidden and the user never touched it. Only treat
+        // this as a real selection if it came from the dropdown actually shown for this
+        // row's EditorKind.
+        if (editor.Tag is not string editorTag || editorTag != row.EditorKind.ToString()) return;
+
+        CommitRowEdit(row, "ComboBox SelectionChanged");
     }
 
     private void CommitRowEdit(TagRow row, string triggeredBy = "")
