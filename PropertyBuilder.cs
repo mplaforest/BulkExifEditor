@@ -49,7 +49,16 @@ public static class PropertyBuilder
             case "ExifURational":
             {
                 var (n, d) = ParseFraction(valueText);
-                return new ExifURational(tag, (uint)Math.Max(0, n), (uint)Math.Max(1, d));
+                // ExifURational is unsigned - it can only ever store a magnitude. Silently
+                // clamping a negative input to 0 (the old behavior) was exactly the kind of
+                // silent data loss this field's bugs kept turning out to be - throw instead,
+                // caught by the normal invalid-value error path, so the user is told why.
+                if (n < 0)
+                    throw new FormatException(
+                        "This value cannot be negative - it only stores a magnitude. " +
+                        "For GPS altitude, enter a positive number of meters and set the " +
+                        "separate GPSAltitudeRef field to \"Below Sea Level\" if needed.");
+                return new ExifURational(tag, (uint)n, (uint)Math.Max(1, d));
             }
             case "ExifSRational":
             {
@@ -123,8 +132,21 @@ public static class PropertyBuilder
         }
 
         double value = double.Parse(text, CultureInfo.InvariantCulture);
-        const int denom = 1000000;
-        return ((int)Math.Round(value * denom), denom);
+
+        // denom=1,000,000 previously meant any value whose magnitude times a million
+        // exceeded int.MaxValue (~2147.48) silently overflowed the (int) cast below -
+        // unchecked by default in C#, so it produced garbage (often clamped to 0 by the
+        // Math.Max guard in Build()) instead of throwing, with no error shown to the user.
+        // 1,000 still gives 3 decimal places of precision (plenty for GPS altitude and
+        // similar) while raising the safe range to roughly +/-2.1 million. `checked` makes
+        // any value that still exceeds that throw OverflowException - caught by the
+        // existing try/catch in CommitRowEdit and shown as a real error - rather than
+        // silently writing wrong data again.
+        const int denom = 1000;
+        checked
+        {
+            return ((int)Math.Round(value * denom), denom);
+        }
     }
 
     public static byte[] ParseBytes(string text)
