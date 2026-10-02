@@ -457,14 +457,23 @@ public partial class MainWindow : Window
         if (e.AddedItems.Count == 0) return;
         if (sender is not FrameworkElement { DataContext: TagRow row } editor) return;
 
-        // All three ref dropdowns share the same ValueText binding as the row's text box
-        // (see MainWindow.xaml), so typing a character that happens to match one of a
-        // *different*, currently-invisible dropdown's item Tag (e.g. a stray "1" matching
-        // AltRefEditor's "Below Sea Level") silently reselects it there too and fires this
-        // same event - even though it's hidden and the user never touched it. Only treat
-        // this as a real selection if it came from the dropdown actually shown for this
-        // row's EditorKind.
+        // All three ref dropdowns show the same row's ValueText (see MainWindow.xaml), so
+        // a character typed into the text box that happens to match one of a *different*,
+        // currently-invisible dropdown's item Tag (e.g. a stray "1" matching AltRefEditor's
+        // "Below Sea Level") silently reselects it there too and fires this same event -
+        // even though it's hidden and the user never touched it. Only treat this as a real
+        // selection if it came from the dropdown actually shown for this row's EditorKind.
         if (editor.Tag is not string editorTag || editorTag != row.EditorKind.ToString()) return;
+
+        // SelectedValue binds OneWay now (display only) - write the pick back to the row
+        // explicitly here instead of relying on a TwoWay binding's reverse direction. With
+        // all three dropdowns TwoWay-bound to the same ValueText, a dropdown whose items
+        // didn't match the *other* field's value (e.g. AltRefEditor's "0"/"1" against a
+        // typed "120.5") would fail to resolve and push that failure back, silently
+        // clearing ValueText - which was quietly discarding GPSAltitude's typed value
+        // with no error, since the commit saw a blank value and just skipped it.
+        if (sender is ComboBox { SelectedValue: string selected })
+            row.ValueText = selected;
 
         CommitRowEdit(row, "ComboBox SelectionChanged");
     }
@@ -498,11 +507,12 @@ public partial class MainWindow : Window
                 entry.Image.Properties.Set(newProp);
                 entry.IsDirty = true;
 
-                if (multi)
-                {
-                    entry.Image.Save(entry.FilePath);
-                    entry.IsDirty = false;
-                }
+                // Always save immediately on commit, whether editing one file or many -
+                // previously only multi-file edits auto-saved, which meant a single-file
+                // edit just sat as an unsaved "*" until a separate Save Changes click.
+                // That inconsistency repeatedly looked like "this field isn't saving".
+                entry.Image.Save(entry.FilePath);
+                entry.IsDirty = false;
 
                 applied++;
             }
@@ -523,19 +533,21 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (multi)
+        // Re-format the display value (e.g. normalizing GPS "D M S" input) for single-file
+        // edits; multi-file edits get a fresh row from the next RefreshCurrentTags instead.
+        if (!multi)
         {
-            StatusText.Text = $"Applied \"{row.Name}\" to {applied} of {targets.Count} file(s).";
-            if (errors.Count > 0)
-                MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
-                    "Apply errors", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        else
-        {
-            // Re-format the single-file display value (e.g. normalizing GPS "D M S" input).
             row.ValueText = newText;
             row.OriginalValueText = newText;
         }
+
+        StatusText.Text = multi
+            ? $"Applied \"{row.Name}\" to {applied} of {targets.Count} file(s) and saved."
+            : $"Saved {row.Name} to {targets[0].FileName}.";
+
+        if (errors.Count > 0)
+            MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
+                "Apply errors", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void AddTag_Click(object sender, RoutedEventArgs e)
@@ -565,11 +577,9 @@ public partial class MainWindow : Window
                 entry.Image.Properties.Set(prop);
                 entry.IsDirty = true;
 
-                if (multi)
-                {
-                    entry.Image.Save(entry.FilePath);
-                    entry.IsDirty = false;
-                }
+                // Always save immediately, same as CommitRowEdit - see its comment for why.
+                entry.Image.Save(entry.FilePath);
+                entry.IsDirty = false;
 
                 applied++;
             }
@@ -581,13 +591,12 @@ public partial class MainWindow : Window
 
         RefreshCurrentTags();
 
-        if (multi)
-        {
-            StatusText.Text = $"Added tag to {applied} of {targets.Count} file(s).";
-            if (errors.Count > 0)
-                MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
-                    "Add tag errors", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        StatusText.Text = multi
+            ? $"Added tag to {applied} of {targets.Count} file(s) and saved."
+            : applied > 0 ? $"Added tag to {targets[0].FileName} and saved." : "";
+        if (errors.Count > 0)
+            MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
+                "Add tag errors", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void RemoveTag_Click(object sender, RoutedEventArgs e)
@@ -611,11 +620,9 @@ public partial class MainWindow : Window
 
                 entry.IsDirty = true;
 
-                if (multi)
-                {
-                    entry.Image.Save(entry.FilePath);
-                    entry.IsDirty = false;
-                }
+                // Always save immediately, same as CommitRowEdit - see its comment for why.
+                entry.Image.Save(entry.FilePath);
+                entry.IsDirty = false;
 
                 applied++;
             }
@@ -627,12 +634,11 @@ public partial class MainWindow : Window
 
         RefreshCurrentTags(); // restores a blank placeholder row for GPS tags, if applicable
 
-        if (multi)
-        {
-            StatusText.Text = $"Removed tag(s) from {applied} of {targets.Count} file(s).";
-            if (errors.Count > 0)
-                MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
-                    "Remove tag errors", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        StatusText.Text = multi
+            ? $"Removed tag(s) from {applied} of {targets.Count} file(s) and saved."
+            : applied > 0 ? $"Removed tag(s) from {targets[0].FileName} and saved." : "";
+        if (errors.Count > 0)
+            MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
+                "Remove tag errors", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 }
