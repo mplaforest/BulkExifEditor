@@ -282,6 +282,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        var dlg = new BulkRenameWindow { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+        string baseName = dlg.ResultBaseName;
+
         var ordered = targets.OrderBy(GetCaptureDate).ToList();
 
         var errors = new List<string>();
@@ -290,7 +294,7 @@ public partial class MainWindow : Window
         for (int i = 0; i < ordered.Count; i++)
         {
             var entry = ordered[i];
-            string newName = $"{Path.GetFileNameWithoutExtension(entry.FileName)}-{i + 1:D3}{Path.GetExtension(entry.FileName)}";
+            string newName = $"{baseName}-{i + 1:D3}{Path.GetExtension(entry.FileName)}";
 
             string? error = entry.Rename(newName);
             if (error != null)
