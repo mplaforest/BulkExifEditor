@@ -266,6 +266,66 @@ public partial class MainWindow : Window
         CurrentTags.Clear();
     }
 
+    private void BulkRename_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = SelectedEntries;
+        if (targets.Count == 0)
+        {
+            MessageBox.Show(this, "Select the files to rename first.", "No files selected");
+            return;
+        }
+        if (targets.Count > 999)
+        {
+            MessageBox.Show(this,
+                $"Can only bulk rename up to 999 files at a time (you selected {targets.Count}).",
+                "Too many files", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var ordered = targets.OrderBy(GetCaptureDate).ToList();
+
+        var errors = new List<string>();
+        int renamed = 0;
+
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            var entry = ordered[i];
+            string newName = $"{Path.GetFileNameWithoutExtension(entry.FileName)}-{i + 1:D3}{Path.GetExtension(entry.FileName)}";
+
+            string? error = entry.Rename(newName);
+            if (error != null)
+                errors.Add($"{entry.FileName}: {error}");
+            else
+                renamed++;
+        }
+
+        ShowStatus($"Bulk renamed {renamed} of {ordered.Count} file(s).");
+
+        if (errors.Count > 0)
+            MessageBox.Show(this, "Some files could not be renamed:\n" + string.Join("\n", errors),
+                "Bulk rename errors", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    // DateTimeOriginal (when the photo was actually taken) if present; falls back to the
+    // file's own last-write time for files with no such EXIF tag.
+    private static DateTime GetCaptureDate(FileEntry entry)
+    {
+        try
+        {
+            if (entry.Image.Properties.Contains(ExifTag.DateTimeOriginal))
+            {
+                object? value = entry.Image.Properties.Get(ExifTag.DateTimeOriginal).Value;
+                if (value is DateTime dt) return dt;
+                if (DateTime.TryParse(value?.ToString(), out var parsed)) return parsed;
+            }
+        }
+        catch
+        {
+            // fall through to file time below
+        }
+        return File.GetLastWriteTime(entry.FilePath);
+    }
+
     // --- Save ---
 
     private void SaveChanges_Click(object sender, RoutedEventArgs e)
