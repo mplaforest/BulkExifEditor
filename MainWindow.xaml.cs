@@ -403,18 +403,26 @@ public partial class MainWindow : Window
         (ExifTag.Copyright, IFD.Zeroth, "Copyright", "ExifAscii", "© 2026 Jane Doe"),
     };
 
-    // The six core GPS position tags, always shown in this fixed order (each value tag
-    // immediately followed by its Ref tag) regardless of the order the file stores them
-    // in, using the real saved value if present or a blank editable placeholder if not.
-    // Also doubles as the name-override table below.
+    // The four GPS position tags shown as editable rows, always in this fixed order,
+    // using the real saved value if present or a blank editable placeholder if not.
+    // Also doubles as the name-override table below. GPSLatitudeRef/GPSLongitudeRef are
+    // deliberately not listed here - they're derived automatically from the sign of the
+    // decimal degree value typed into GPSLatitude/GPSLongitude (see
+    // PropertyBuilder.BuildGpsCoordinate) rather than edited directly.
     private static readonly (ExifTag Tag, IFD Ifd, string Name, string TypeName, string Example)[] GpsPositionTags =
     {
-        (ExifTag.GPSLatitude, IFD.GPS, "GPSLatitude", "ExifURationalArray", "40 26 46.3"),
-        (ExifTag.GPSLatitudeRef, IFD.GPS, "GPSLatitudeRef", "ExifAscii", ""),
-        (ExifTag.GPSLongitude, IFD.GPS, "GPSLongitude", "ExifURationalArray", "79 58 56.0"),
-        (ExifTag.GPSLongitudeRef, IFD.GPS, "GPSLongitudeRef", "ExifAscii", ""),
+        (ExifTag.GPSLatitude, IFD.GPS, "GPSLatitude", "ExifURationalArray", "44.518597"),
+        (ExifTag.GPSLongitude, IFD.GPS, "GPSLongitude", "ExifURationalArray", "-111.4981226"),
         (ExifTag.GPSAltitude, IFD.GPS, "GPSAltitude", "ExifURational", "120.5"),
         (ExifTag.GPSAltitudeRef, IFD.GPS, "GPSAltitudeRef", "ExifByte", ""),
+    };
+
+    // Written automatically alongside GPSLatitude/GPSLongitude - never shown as their own
+    // row, so they must be skipped explicitly in the "everything else" loop below too
+    // (not just left out of GpsPositionTags, which only controls the pinned/placeholder rows).
+    private static readonly HashSet<ExifTag> AutoManagedGpsRefTags = new()
+    {
+        ExifTag.GPSLatitudeRef, ExifTag.GPSLongitudeRef,
     };
 
     private static readonly HashSet<ExifTag> PinnedTagSet =
@@ -435,8 +443,9 @@ public partial class MainWindow : Window
         foreach (var prop in _currentEntry.Image.Properties)
         {
             if (PinnedTagSet.Contains(prop.Tag)) continue;
+            if (AutoManagedGpsRefTags.Contains(prop.Tag)) continue;
             if (prop.Name == "Unknown") continue;
-            CurrentTags.Add(ToRow(prop, prop.Name));
+            CurrentTags.Add(ToRow(prop, prop.Name, _currentEntry.Image.Properties));
         }
 
         // The GPS position tags, always in the same fixed order, at the end.
@@ -452,7 +461,7 @@ public partial class MainWindow : Window
         if (_currentEntry!.Image.Properties.Contains(def.Tag))
         {
             var prop = _currentEntry.Image.Properties.Get(def.Tag);
-            return ToRow(prop, def.Name);
+            return ToRow(prop, def.Name, _currentEntry.Image.Properties);
         }
 
         return new TagRow
@@ -468,20 +477,26 @@ public partial class MainWindow : Window
         };
     }
 
-    private static TagRow ToRow(ExifProperty prop, string name)
+    private static TagRow ToRow(ExifProperty prop, string name, ExifPropertyCollection<ExifProperty> properties)
     {
         string typeName = prop.GetType().Name;
         var editorKind = TagRow.GetEditorKind(prop.Tag);
         string valueText;
 
-        if (editorKind != TagEditorKind.Text)
+        if (prop.Tag == ExifTag.GPSLatitude || prop.Tag == ExifTag.GPSLongitude)
         {
-            // Ref/dropdown fields (GPSLatitudeRef/LongitudeRef/AltitudeRef): once saved,
-            // the library re-parses these as an ExifEnumProperty<T> wrapper with a
-            // friendly name like "North"/"AboveSeaLevel" - a type PropertyBuilder can't
-            // reconstruct, which broke editing a field a second time. Always write these
-            // back using our own known-good type instead of trusting prop.GetType(), and
-            // normalize the display text to the raw code the dropdown's items use.
+            // Shown/edited as a single signed decimal degree value - the sign alone
+            // determines the (no-longer-manually-edited) Ref tag's N/S or E/W.
+            valueText = FormatGpsDecimal(prop, properties);
+        }
+        else if (editorKind != TagEditorKind.Text)
+        {
+            // Ref/dropdown field (GPSAltitudeRef): once saved, the library re-parses this
+            // as an ExifEnumProperty<T> wrapper with a friendly name like "AboveSeaLevel" -
+            // a type PropertyBuilder can't reconstruct, which broke editing a field a
+            // second time. Always write it back using our own known-good type instead of
+            // trusting prop.GetType(), and normalize the display text to the raw code the
+            // dropdown's items use.
             typeName = GpsPositionTags.First(g => g.Tag == prop.Tag).TypeName;
             valueText = NormalizeRefValue(prop.Tag, prop.ToString() ?? string.Empty);
         }
@@ -553,6 +568,31 @@ public partial class MainWindow : Window
         }
 
         return raw;
+    }
+
+    // Renders GPSLatitude/GPSLongitude as a single signed decimal degree value (e.g.
+    // -111.498123) rather than the raw degrees/minutes/seconds triple - the sign comes
+    // from the sibling Ref tag (N/S or E/W), read here rather than ever shown as its own
+    // row. Still round-trips through PropertyBuilder.BuildGpsCoordinate if edited.
+    private static string FormatGpsDecimal(ExifProperty prop, ExifPropertyCollection<ExifProperty> properties)
+    {
+        try
+        {
+            double decDeg = PropertyBuilder.ToDecimalDegrees(prop);
+
+            ExifTag refTag = prop.Tag == ExifTag.GPSLatitude ? ExifTag.GPSLatitudeRef : ExifTag.GPSLongitudeRef;
+            if (properties.Contains(refTag))
+            {
+                string refCode = NormalizeRefValue(refTag, properties.Get(refTag).ToString() ?? string.Empty);
+                if (refCode == "S" || refCode == "W") decDeg = -decDeg;
+            }
+
+            return decDeg.ToString("0.######", CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return prop.ToString() ?? string.Empty;
+        }
     }
 
     // The Value column's TextBox/ComboBox editors are always live (see MainWindow.xaml) -
@@ -655,11 +695,15 @@ public partial class MainWindow : Window
         foreach (var entry in targets)
         {
             ExifProperty newProp;
+            ExifProperty? refProp = null;
             try
             {
                 // Build a fresh property instance per file rather than sharing one object
                 // across unrelated ImageFile.Properties collections.
-                newProp = PropertyBuilder.Build(row.Tag, row.TypeName, newText);
+                if (row.Tag == ExifTag.GPSLatitude || row.Tag == ExifTag.GPSLongitude)
+                    (newProp, refProp) = PropertyBuilder.BuildGpsCoordinate(row.Tag, newText);
+                else
+                    newProp = PropertyBuilder.Build(row.Tag, row.TypeName, newText);
             }
             catch (Exception ex)
             {
@@ -670,6 +714,7 @@ public partial class MainWindow : Window
             try
             {
                 entry.Image.Properties.Set(newProp);
+                if (refProp != null) entry.Image.Properties.Set(refProp);
                 entry.IsDirty = true;
 
                 // Always save immediately on commit, whether editing one file or many -

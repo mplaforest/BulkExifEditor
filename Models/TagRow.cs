@@ -6,8 +6,6 @@ namespace ExifBatchEditor.Models;
 public enum TagEditorKind
 {
     Text,
-    LatitudeRef,
-    LongitudeRef,
     AltitudeRef,
 }
 
@@ -47,8 +45,6 @@ public class TagRow : INotifyPropertyChanged
 
     public static TagEditorKind GetEditorKind(ExifTag tag) => tag switch
     {
-        ExifTag.GPSLatitudeRef => TagEditorKind.LatitudeRef,
-        ExifTag.GPSLongitudeRef => TagEditorKind.LongitudeRef,
         ExifTag.GPSAltitudeRef => TagEditorKind.AltitudeRef,
         _ => TagEditorKind.Text,
     };

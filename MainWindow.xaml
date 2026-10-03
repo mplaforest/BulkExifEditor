@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
-        Title="EXIF Batch Metadata Editor v1.0.19" Height="700" Width="1100"
+        Title="EXIF Batch Metadata Editor v1.0.20" Height="700" Width="1100"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -131,25 +131,12 @@
                                             <!-- Tag here (on the ComboBox itself, not its items - the items'
                                                  Tag is the SelectedValuePath) identifies which EditorKind this
                                                  editor belongs to, so the handler can ignore spurious selection
-                                                 changes from these other two, always-present-but-collapsed-for-
-                                                 this-row dropdowns: since all three share the same ValueText
-                                                 binding as the visible text box, typing a character that happens
-                                                 to match one of their items' Tag (e.g. a stray "1" matching
-                                                 AltRefEditor's "Below Sea Level") silently reselects it and fires
-                                                 SelectionChanged even though it's invisible and the user never
-                                                 touched it. -->
-                                            <ComboBox x:Name="LatRefEditor" Tag="LatitudeRef" Visibility="Collapsed"
-                                                      SelectedValuePath="Tag" SelectionChanged="RefComboBox_SelectionChanged"
-                                                      SelectedValue="{Binding ValueText, Mode=OneWay}">
-                                                <ComboBoxItem Content="North" Tag="N"/>
-                                                <ComboBoxItem Content="South" Tag="S"/>
-                                            </ComboBox>
-                                            <ComboBox x:Name="LonRefEditor" Tag="LongitudeRef" Visibility="Collapsed"
-                                                      SelectedValuePath="Tag" SelectionChanged="RefComboBox_SelectionChanged"
-                                                      SelectedValue="{Binding ValueText, Mode=OneWay}">
-                                                <ComboBoxItem Content="East" Tag="E"/>
-                                                <ComboBoxItem Content="West" Tag="W"/>
-                                            </ComboBox>
+                                                 changes from this always-present-but-collapsed-for-this-row
+                                                 dropdown: since it shares the same ValueText binding as the
+                                                 visible text box, typing a character that happens to match one
+                                                 of its items' Tag (e.g. a stray "1" matching "Below Sea Level")
+                                                 would otherwise silently reselect it and fire SelectionChanged
+                                                 even though it's invisible and the user never touched it. -->
                                             <ComboBox x:Name="AltRefEditor" Tag="AltitudeRef" Visibility="Collapsed"
                                                       SelectedValuePath="Tag" SelectionChanged="RefComboBox_SelectionChanged"
                                                       SelectedValue="{Binding ValueText, Mode=OneWay}">
@@ -158,14 +145,6 @@
                                             </ComboBox>
                                         </Grid>
                                         <DataTemplate.Triggers>
-                                            <DataTrigger Binding="{Binding EditorKind}" Value="LatitudeRef">
-                                                <Setter TargetName="TextEditor" Property="Visibility" Value="Collapsed"/>
-                                                <Setter TargetName="LatRefEditor" Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding EditorKind}" Value="LongitudeRef">
-                                                <Setter TargetName="TextEditor" Property="Visibility" Value="Collapsed"/>
-                                                <Setter TargetName="LonRefEditor" Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
                                             <DataTrigger Binding="{Binding EditorKind}" Value="AltitudeRef">
                                                 <Setter TargetName="TextEditor" Property="Visibility" Value="Collapsed"/>
                                                 <Setter TargetName="AltRefEditor" Property="Visibility" Value="Visible"/>

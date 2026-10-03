@@ -89,6 +89,57 @@ public static class PropertyBuilder
     }
 
     /// <summary>
+    /// Builds GPSLatitude/GPSLongitude plus its matching Ref tag from a single signed
+    /// decimal-degree input (e.g. -111.4981226), so the UI no longer needs a separate
+    /// manually-edited Ref field - the sign of the input determines N/S or E/W.
+    /// </summary>
+    public static (ExifProperty Value, ExifProperty Ref) BuildGpsCoordinate(ExifTag tag, string decimalText)
+    {
+        bool isLatitude = tag == ExifTag.GPSLatitude;
+        double maxAbs = isLatitude ? 90 : 180;
+        string axisName = isLatitude ? "Latitude" : "Longitude";
+
+        if (!double.TryParse((decimalText ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double decDeg))
+            throw new FormatException(
+                $"Expected a decimal degree value for {axisName.ToLowerInvariant()}, e.g. " +
+                (isLatitude ? "44.518597" : "-111.4981226") + ".");
+
+        if (Math.Abs(decDeg) > maxAbs)
+            throw new FormatException($"{axisName} must be between -{maxAbs} and {maxAbs}.");
+
+        double absDeg = Math.Abs(decDeg);
+        int deg = (int)absDeg;
+        double minFull = (absDeg - deg) * 60;
+        int min = (int)minFull;
+        double sec = (minFull - min) * 60;
+
+        var valueProp = new ExifURationalArray(tag, new[]
+        {
+            new MathEx.UFraction32((float)deg),
+            new MathEx.UFraction32((float)min),
+            new MathEx.UFraction32((float)sec),
+        });
+
+        ExifTag refTag = isLatitude ? ExifTag.GPSLatitudeRef : ExifTag.GPSLongitudeRef;
+        string refCode = isLatitude
+            ? (decDeg < 0 ? "S" : "N")
+            : (decDeg < 0 ? "W" : "E");
+        var refProp = new ExifAscii(refTag, refCode, Encoding.UTF8);
+
+        return (valueProp, refProp);
+    }
+
+    /// <summary>
+    /// Converts a stored GPSLatitude/GPSLongitude rational triple back to an unsigned
+    /// decimal degree magnitude (caller applies the sign from the Ref tag).
+    /// </summary>
+    public static double ToDecimalDegrees(ExifProperty prop)
+    {
+        var dms = ParseThreeNumbers(prop.ToString() ?? string.Empty);
+        return dms[0] + dms[1] / 60.0 + dms[2] / 3600.0;
+    }
+
+    /// <summary>
     /// Parses a degrees/minutes/seconds triple, accepting plain "40 26 46.3", the
     /// library's own "[40/1 26/1 4630/1000]" ToString format, and the "40.00°26.00'46.30""
     /// GPSLatitudeLongitude ToString format, so round-tripping a value shown in the grid
