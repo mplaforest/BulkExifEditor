@@ -40,20 +40,42 @@ public partial class MainWindow : Window
     {
         try
         {
+            string mapAssetsDir = Path.Combine(AppContext.BaseDirectory, "MapAssets");
+
+            // Never committed to git (see .gitignore) - read locally at runtime so the key
+            // doesn't have to live in any file that gets pushed to GitHub. If it's missing,
+            // degrade gracefully instead of loading a broken, key-less Google Maps page.
+            string keyPath = Path.Combine(mapAssetsDir, "GoogleMapsApiKey.txt");
+            if (!File.Exists(keyPath))
+            {
+                MapView.Visibility = Visibility.Collapsed;
+                MapUnavailableText.Text = "Map unavailable - no Google Maps API key found " +
+                    "(expected MapAssets\\GoogleMapsApiKey.txt next to the exe).";
+                MapUnavailableText.Visibility = Visibility.Visible;
+                return;
+            }
+            string apiKey = File.ReadAllText(keyPath).Trim();
+
             await MapView.EnsureCoreWebView2Async();
 
-            // Served from a local virtual host (MapAssets\map.html, leaflet.js, leaflet.css,
-            // all bundled with the app) rather than NavigateToString+a CDN - a real origin
-            // behaves more predictably in WebView2, and it means only the OpenStreetMap tile
-            // requests themselves need to reach the internet at runtime. Markers are updated
-            // afterward in place via ExecuteScriptAsync (setMarkers) rather than re-navigating,
-            // so the user's pan/zoom isn't reset every time the file selection changes.
-            string mapAssetsDir = Path.Combine(AppContext.BaseDirectory, "MapAssets");
+            // Served from a local virtual host (MapAssets\map.html, bundled with the app)
+            // rather than NavigateToString - a real origin behaves more predictably in
+            // WebView2. map.html itself has no key in it; the Google Maps script tag is
+            // injected below, after the page loads, with the key read above. Markers are
+            // updated afterward in place via ExecuteScriptAsync (setMarkers) rather than
+            // re-navigating, so the user's pan/zoom isn't reset every time the file
+            // selection changes.
             MapView.CoreWebView2.SetVirtualHostNameToFolderMapping(
                 "map.local", mapAssetsDir, Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
 
             MapView.NavigationCompleted += (_, _) =>
             {
+                string loadGoogle =
+                    "var s=document.createElement('script');" +
+                    $"s.src='https://maps.googleapis.com/maps/api/js?key={apiKey}&callback=initMap';" +
+                    "document.head.appendChild(s);";
+                _ = MapView.CoreWebView2.ExecuteScriptAsync(loadGoogle);
+
                 _mapReady = true;
                 if (_pendingMapScript != null)
                 {

@@ -2,34 +2,58 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<link rel="stylesheet" href="leaflet.css" />
 <style>html,body,#map{height:100%;margin:0;padding:0;}</style>
 </head>
 <body>
 <div id="map"></div>
-<script src="leaflet.js"></script>
 <script>
-  var map = L.map('map').setView([20, 0], 2);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+  // The Google Maps script tag itself is injected from C# after this page loads
+  // (MainWindow.xaml.cs InitMapAsync) so the API key never has to live in this file -
+  // this file is committed to git, the key is not. initMap() is Google's callback once
+  // its script has loaded; setMarkers() may be called by C# before that happens, so it
+  // just queues the latest points until the map object actually exists.
+  var map;
+  var pendingPoints = null;
+
+  function initMap() {
+    map = new google.maps.Map(document.getElementById('map'), {
+      center: { lat: 20, lng: 0 },
+      zoom: 2
+    });
+    if (pendingPoints) {
+      var p = pendingPoints;
+      pendingPoints = null;
+      setMarkers(p);
+    }
+  }
+
   var markers = [];
   function setMarkers(points) {
-    markers.forEach(function(m) { map.removeLayer(m); });
+    if (!map) { pendingPoints = points; return; }
+
+    markers.forEach(function(m) { m.setMap(null); });
     markers = [];
-    if (!points.length) { map.setView([20, 0], 2); return; }
-    var bounds = [];
+
+    if (!points.length) {
+      map.setCenter({ lat: 20, lng: 0 });
+      map.setZoom(2);
+      return;
+    }
+
+    var bounds = new google.maps.LatLngBounds();
     points.forEach(function(p) {
-      var m = L.circleMarker([p.Lat, p.Lon], {
-        radius: 7, color: '#1a73e8', fillColor: '#1a73e8', fillOpacity: 0.85, weight: 2
-      }).addTo(map);
-      m.bindTooltip(p.Name);
+      var pos = { lat: p.Lat, lng: p.Lon };
+      var m = new google.maps.Marker({ position: pos, map: map, title: p.Name });
       markers.push(m);
-      bounds.push([p.Lat, p.Lon]);
+      bounds.extend(pos);
     });
-    if (bounds.length === 1) map.setView(bounds[0], 14);
-    else map.fitBounds(bounds, { padding: [20, 20] });
+
+    if (points.length === 1) {
+      map.setCenter(bounds.getCenter());
+      map.setZoom(14);
+    } else {
+      map.fitBounds(bounds, 20);
+    }
   }
 </script>
 </body>

@@ -8,3 +8,7 @@ obj/
 *.suo
 UpgradeLog.htm
 Backup/
+
+# Secret - never committed. The app reads this locally at runtime (see
+# InitMapAsync in MainWindow.xaml.cs); the map degrades gracefully if it's absent.
+MapAssets/GoogleMapsApiKey.txt

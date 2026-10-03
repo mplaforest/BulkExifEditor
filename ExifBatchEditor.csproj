@@ -16,9 +16,9 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
   </ItemGroup>
 
-  <!-- Bundled locally (not pulled from a CDN at runtime) so the map still works if a
-       security product's web filter blocks an unrecognized CDN domain for the embedded
-       WebView2 browser - only the OpenStreetMap tile requests still need to reach out. -->
+  <!-- map.html is bundled locally rather than loaded via NavigateToString - a real origin
+       behaves more predictably in WebView2. GoogleMapsApiKey.txt (gitignored, not
+       committed) also lives here and is copied alongside it; see InitMapAsync. -->
   <ItemGroup>
     <Content Include="MapAssets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
