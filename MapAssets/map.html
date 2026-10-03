@@ -18,7 +18,11 @@
   function initMap() {
     map = new google.maps.Map(document.getElementById('map'), {
       center: { lat: 20, lng: 0 },
-      zoom: 2
+      zoom: 2,
+      zoomControl: true,
+      streetViewControl: false,
+      mapTypeControl: false,
+      fullscreenControl: false
     });
     if (pendingPoints) {
       var p = pendingPoints;
@@ -61,6 +65,12 @@
       map.setZoom(14);
     } else {
       map.fitBounds(bounds, 20);
+      // fitBounds zooms to the max level when every point is the same (or very close
+      // together), landing at street level - clamp it back down afterward in that case.
+      // fitBounds applies asynchronously, so this has to wait for the next idle event.
+      google.maps.event.addListenerOnce(map, 'idle', function() {
+        if (map.getZoom() > 16) map.setZoom(16);
+      });
     }
   }
 </script>
