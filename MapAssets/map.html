@@ -25,6 +25,14 @@
       pendingPoints = null;
       setMarkers(p);
     }
+
+    // Clicking a marker fires the marker's own click, not this one, so this only
+    // fires for clicks on open map area - sent to the C# host via WebMessageReceived.
+    map.addListener('click', function(e) {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+      }
+    });
   }
 
   var markers = [];

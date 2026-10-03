@@ -12,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using ExifBatchEditor.Models;
 using ExifLibrary;
+using Microsoft.Web.WebView2.Core;
 
 namespace ExifBatchEditor;
 
@@ -66,7 +67,9 @@ public partial class MainWindow : Window
             // re-navigating, so the user's pan/zoom isn't reset every time the file
             // selection changes.
             MapView.CoreWebView2.SetVirtualHostNameToFolderMapping(
-                "map.local", mapAssetsDir, Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+                "map.local", mapAssetsDir, CoreWebView2HostResourceAccessKind.Allow);
+
+            MapView.CoreWebView2.WebMessageReceived += MapView_WebMessageReceived;
 
             MapView.NavigationCompleted += (_, _) =>
             {
@@ -93,6 +96,72 @@ public partial class MainWindow : Window
             MapView.Visibility = Visibility.Collapsed;
             MapUnavailableText.Visibility = Visibility.Visible;
         }
+    }
+
+    private record MapClickMessage(double Lat, double Lng);
+
+    // Fired when map.html's click listener posts a clicked lat/lng back to C#. Sets
+    // GPSLatitude/GPSLongitude (and their Ref tags) on every currently selected file,
+    // mirroring the "edits apply to all selected files" behavior used everywhere else
+    // in this app (CommitRowEdit, AddTag_Click, etc.) rather than just the template file.
+    private void MapView_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        MapClickMessage? click;
+        try
+        {
+            click = JsonSerializer.Deserialize<MapClickMessage>(e.WebMessageAsJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            return;
+        }
+        if (click == null) return;
+
+        var targets = SelectedEntries;
+        if (targets.Count == 0)
+        {
+            ShowStatus("Select a file first to set its location from the map.");
+            return;
+        }
+
+        string latText = click.Lat.ToString(CultureInfo.InvariantCulture);
+        string lonText = click.Lng.ToString(CultureInfo.InvariantCulture);
+        var errors = new List<string>();
+        int applied = 0;
+
+        foreach (var entry in targets)
+        {
+            try
+            {
+                var (latProp, latRef) = PropertyBuilder.BuildGpsCoordinate(ExifTag.GPSLatitude, latText);
+                var (lonProp, lonRef) = PropertyBuilder.BuildGpsCoordinate(ExifTag.GPSLongitude, lonText);
+                entry.Image.Properties.Set(latProp);
+                entry.Image.Properties.Set(latRef);
+                entry.Image.Properties.Set(lonProp);
+                entry.Image.Properties.Set(lonRef);
+                entry.IsDirty = true;
+
+                SaveWithRetry(entry);
+                entry.IsDirty = false;
+                applied++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{entry.FileName}: {ex.Message}");
+            }
+        }
+
+        RefreshCurrentTags();
+        UpdateMap();
+
+        ShowStatus(targets.Count > 1
+            ? $"Set location to {click.Lat:0.######}, {click.Lng:0.######} for {applied} of {targets.Count} file(s)."
+            : $"Set location to {click.Lat:0.######}, {click.Lng:0.######}.");
+
+        if (errors.Count > 0)
+            MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
+                "Set location errors", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     // Reads both GPSLatitude and GPSLongitude together (applying each one's Ref sign)
