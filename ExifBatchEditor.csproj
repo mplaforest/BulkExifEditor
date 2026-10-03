@@ -13,6 +13,14 @@
 
   <ItemGroup>
     <PackageReference Include="ExifLibNet" Version="2.1.4" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+  </ItemGroup>
+
+  <!-- Bundled locally (not pulled from a CDN at runtime) so the map still works if a
+       security product's web filter blocks an unrecognized CDN domain for the embedded
+       WebView2 browser - only the OpenStreetMap tile requests still need to reach out. -->
+  <ItemGroup>
+    <Content Include="MapAssets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

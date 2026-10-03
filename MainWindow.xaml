@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
-        Title="EXIF Batch Metadata Editor v1.0.21" Height="700" Width="1200"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="EXIF Batch Metadata Editor v1.0.23" Height="700" Width="1600"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -40,6 +41,8 @@
                 <ColumnDefinition Width="480"/>
                 <ColumnDefinition Width="12"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="400"/>
             </Grid.ColumnDefinitions>
 
             <!-- File list -->
@@ -171,6 +174,18 @@
                     <Button Content="Remove Selected Tag(s)" Padding="8,4" Click="RemoveTag_Click"/>
                 </StackPanel>
             </Grid>
+
+            <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" Background="LightGray"/>
+
+            <!-- Map: shows a pin for each currently-selected file that has GPS
+                 coordinates, kept in sync via UpdateMap() in MainWindow.xaml.cs. -->
+            <DockPanel Grid.Column="4" Margin="6,0,0,0">
+                <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Map"/>
+                <TextBlock x:Name="MapUnavailableText" DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="DarkRed"
+                           Visibility="Collapsed" Margin="0,0,0,4"
+                           Text="Map unavailable - the WebView2 Runtime (bundled with most current Windows/Edge installs) could not be found."/>
+                <wv2:WebView2 x:Name="MapView"/>
+            </DockPanel>
         </Grid>
 
         <!-- Status bar -->

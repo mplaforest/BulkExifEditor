@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,6 +27,96 @@ public partial class MainWindow : Window
 
         FileListBox.ItemsSource = Files;
         TagGrid.ItemsSource = CurrentTags;
+
+        _ = InitMapAsync();
+    }
+
+    // --- Map ---
+
+    private bool _mapReady;
+    private string? _pendingMapScript;
+
+    private async Task InitMapAsync()
+    {
+        try
+        {
+            await MapView.EnsureCoreWebView2Async();
+
+            // Served from a local virtual host (MapAssets\map.html, leaflet.js, leaflet.css,
+            // all bundled with the app) rather than NavigateToString+a CDN - a real origin
+            // behaves more predictably in WebView2, and it means only the OpenStreetMap tile
+            // requests themselves need to reach the internet at runtime. Markers are updated
+            // afterward in place via ExecuteScriptAsync (setMarkers) rather than re-navigating,
+            // so the user's pan/zoom isn't reset every time the file selection changes.
+            string mapAssetsDir = Path.Combine(AppContext.BaseDirectory, "MapAssets");
+            MapView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "map.local", mapAssetsDir, Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+
+            MapView.NavigationCompleted += (_, _) =>
+            {
+                _mapReady = true;
+                if (_pendingMapScript != null)
+                {
+                    string script = _pendingMapScript;
+                    _pendingMapScript = null;
+                    _ = MapView.CoreWebView2.ExecuteScriptAsync(script);
+                }
+            };
+            MapView.CoreWebView2.Navigate("https://map.local/map.html");
+        }
+        catch
+        {
+            // Most likely the WebView2 Runtime isn't installed - degrade gracefully
+            // rather than crashing the whole app over an optional feature.
+            MapView.Visibility = Visibility.Collapsed;
+            MapUnavailableText.Visibility = Visibility.Visible;
+        }
+    }
+
+    // Reads both GPSLatitude and GPSLongitude together (applying each one's Ref sign)
+    // so the map can plot a single point per file - FormatGpsDecimal (used by the tag
+    // grid) only ever handles one of the two tags at a time.
+    private static bool TryGetGpsPoint(FileEntry entry, out double lat, out double lon)
+    {
+        lat = lon = 0;
+        var props = entry.Image.Properties;
+        if (!props.Contains(ExifTag.GPSLatitude) || !props.Contains(ExifTag.GPSLongitude)) return false;
+
+        try
+        {
+            lat = PropertyBuilder.ToDecimalDegrees(props.Get(ExifTag.GPSLatitude));
+            if (props.Contains(ExifTag.GPSLatitudeRef) &&
+                NormalizeRefValue(ExifTag.GPSLatitudeRef, props.Get(ExifTag.GPSLatitudeRef).ToString() ?? "") == "S")
+                lat = -lat;
+
+            lon = PropertyBuilder.ToDecimalDegrees(props.Get(ExifTag.GPSLongitude));
+            if (props.Contains(ExifTag.GPSLongitudeRef) &&
+                NormalizeRefValue(ExifTag.GPSLongitudeRef, props.Get(ExifTag.GPSLongitudeRef).ToString() ?? "") == "W")
+                lon = -lon;
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void UpdateMap()
+    {
+        var points = SelectedEntries
+            .Select(entry => TryGetGpsPoint(entry, out double lat, out double lon)
+                ? new { Lat = lat, Lon = lon, Name = entry.FileName }
+                : null)
+            .Where(p => p != null)
+            .ToList();
+
+        string script = $"setMarkers({JsonSerializer.Serialize(points)})";
+
+        if (_mapReady && MapView.CoreWebView2 != null)
+            _ = MapView.CoreWebView2.ExecuteScriptAsync(script);
+        else
+            _pendingMapScript = script;
     }
 
     // Shows a status message with a brief colored flash that fades out, so an
@@ -264,6 +355,7 @@ public partial class MainWindow : Window
 
         _currentEntry = null;
         CurrentTags.Clear();
+        UpdateMap();
     }
 
     private void BulkRename_Click(object sender, RoutedEventArgs e)
@@ -392,6 +484,7 @@ public partial class MainWindow : Window
         // (and saved) to every selected file, not just this one.
         _currentEntry = SelectedEntries.FirstOrDefault();
         RefreshCurrentTags();
+        UpdateMap();
     }
 
     // Attribution tags shown first, always present as a real value or a blank editable
@@ -759,6 +852,9 @@ public partial class MainWindow : Window
         ShowStatus(multi
             ? $"{row.Name} saved to {applied} of {targets.Count} file(s)."
             : $"{row.Name} saved.");
+
+        if (row.Tag == ExifTag.GPSLatitude || row.Tag == ExifTag.GPSLongitude)
+            UpdateMap();
 
         if (errors.Count > 0)
             MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
