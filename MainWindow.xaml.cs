@@ -538,6 +538,46 @@ public partial class MainWindow : Window
                 "Bulk rename errors", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
+    private void FindReplace_Click(object sender, RoutedEventArgs e)
+    {
+        if (Files.Count == 0)
+        {
+            MessageBox.Show(this, "Add some files first.", "No files loaded");
+            return;
+        }
+
+        var dlg = new FindReplaceWindow { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+
+        var comparison = dlg.ResultMatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var errors = new List<string>();
+        int renamed = 0;
+
+        // Applies to every loaded file, not just the selection - files whose name doesn't
+        // contain the search text are simply left alone, so there's no need to pre-select
+        // just the ones you want changed.
+        foreach (var entry in Files.ToList())
+        {
+            string baseName = Path.GetFileNameWithoutExtension(entry.FileName);
+            if (baseName.IndexOf(dlg.ResultFind, comparison) < 0) continue;
+
+            string newName = baseName.Replace(dlg.ResultFind, dlg.ResultReplace, comparison)
+                + Path.GetExtension(entry.FileName);
+
+            string? error = entry.Rename(newName);
+            if (error != null)
+                errors.Add($"{entry.FileName}: {error}");
+            else
+                renamed++;
+        }
+
+        ShowStatus($"Find and replace: renamed {renamed} file(s).");
+
+        if (errors.Count > 0)
+            MessageBox.Show(this, "Some files could not be renamed:\n" + string.Join("\n", errors),
+                "Find and replace errors", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
     // DateTimeOriginal (when the photo was actually taken) if present; falls back to the
     // file's own last-write time for files with no such EXIF tag.
     private static DateTime GetCaptureDate(FileEntry entry)

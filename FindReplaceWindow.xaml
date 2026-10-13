@@ -1,0 +1,34 @@
+<Window x:Class="ExifBatchEditor.FindReplaceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Find and Replace" Height="240" Width="420"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10"
+                   Text="Finds and replaces text in the filename (not the extension) of every loaded file. Files that don't contain the text are left alone."/>
+
+        <TextBlock Grid.Row="1" Text="Find:" Margin="0,0,0,2"/>
+        <TextBox x:Name="FindBox" Grid.Row="2" Margin="0,0,0,10"/>
+
+        <TextBlock Grid.Row="3" Text="Replace with:" Margin="0,0,0,2"/>
+        <TextBox x:Name="ReplaceBox" Grid.Row="4" Margin="0,0,0,10"/>
+
+        <CheckBox x:Name="MatchCaseBox" Grid.Row="5" Content="Match case"/>
+
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="OK" Width="80" Margin="0,0,8,0" Click="Ok_Click" IsDefault="True"/>
+            <Button Content="Cancel" Width="80" Click="Cancel_Click" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
