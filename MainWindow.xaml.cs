@@ -10,6 +10,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using ExifBatchEditor.Models;
 using ExifLibrary;
 using Microsoft.Web.WebView2.Core;
@@ -311,6 +312,35 @@ public partial class MainWindow : Window
             MessageBox.Show(this, $"Could not open {entry.FileName}: {ex.Message}",
                 "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    // --- Hover preview ---
+
+    private const int PreviewPixelWidth = 900;
+    private DispatcherTimer? _hoverTimer;
+
+    private void Thumbnail_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: FileEntry entry }) return;
+
+        _hoverTimer?.Stop();
+        _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _hoverTimer.Tick += (_, _) =>
+        {
+            _hoverTimer!.Stop();
+            PreviewImage.Source = entry.LoadPreview(PreviewPixelWidth);
+            PreviewImage.Visibility = Visibility.Visible;
+            PreviewPlaceholderText.Visibility = Visibility.Collapsed;
+        };
+        _hoverTimer.Start();
+    }
+
+    private void Thumbnail_MouseLeave(object sender, MouseEventArgs e)
+    {
+        _hoverTimer?.Stop();
+        PreviewImage.Visibility = Visibility.Collapsed;
+        PreviewImage.Source = null;
+        PreviewPlaceholderText.Visibility = Visibility.Visible;
     }
 
     private void FileNameEditor_GotFocus(object sender, RoutedEventArgs e)

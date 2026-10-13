@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="EXIF Batch Metadata Editor v1.0.27" Height="700" Width="1600"
+        Title="EXIF Batch Metadata Editor v1.0.28" Height="1100" Width="1400"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -35,14 +35,20 @@
             <ProgressBar x:Name="LoadingProgressBar" Height="16" Minimum="0"/>
         </StackPanel>
 
-        <!-- Main content -->
+        <!-- Main content: file list + tags on top, preview + map below -->
         <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="380"/>
+            </Grid.RowDefinitions>
+
+            <!-- Top: file list | tag grid -->
+            <Grid Grid.Row="0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="480"/>
                 <ColumnDefinition Width="12"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="400"/>
             </Grid.ColumnDefinitions>
 
             <!-- File list -->
@@ -66,7 +72,8 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="40" Height="40" Background="#22000000" Margin="0,0,8,0">
+                                <Border Grid.Column="0" Width="40" Height="40" Background="#22000000" Margin="0,0,8,0"
+                                        MouseEnter="Thumbnail_MouseEnter" MouseLeave="Thumbnail_MouseLeave">
                                     <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
                                 </Border>
                                 <!-- Always-live editable filename, same pattern as the tag grid's
@@ -174,18 +181,42 @@
                     <Button Content="Remove Selected Tag(s)" Padding="8,4" Click="RemoveTag_Click"/>
                 </StackPanel>
             </Grid>
+            </Grid>
 
-            <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" Background="LightGray"/>
+            <GridSplitter Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Center" Height="12" Background="LightGray"/>
 
-            <!-- Map: shows a pin for each currently-selected file that has GPS
-                 coordinates, kept in sync via UpdateMap() in MainWindow.xaml.cs. -->
-            <DockPanel Grid.Column="4" Margin="6,0,0,0">
-                <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Map"/>
-                <TextBlock x:Name="MapUnavailableText" DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="DarkRed"
-                           Visibility="Collapsed" Margin="0,0,0,4"
-                           Text="Map unavailable - the WebView2 Runtime (bundled with most current Windows/Edge installs) could not be found."/>
-                <wv2:WebView2 x:Name="MapView"/>
-            </DockPanel>
+            <!-- Bottom: preview | map -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Preview: hovering a thumbnail in the file list for 1 second shows a larger
+                     version here (see Thumbnail_MouseEnter/Leave in MainWindow.xaml.cs). -->
+                <DockPanel Grid.Column="0" Margin="0,0,6,0">
+                    <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Preview"/>
+                    <Grid>
+                        <TextBlock x:Name="PreviewPlaceholderText" Text="Hover over a thumbnail to preview"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="Gray" FontStyle="Italic" TextWrapping="Wrap" TextAlignment="Center"/>
+                        <Image x:Name="PreviewImage" Stretch="Uniform" Visibility="Collapsed"/>
+                    </Grid>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="LightGray"/>
+
+                <!-- Map: shows a pin for each currently-selected file that has GPS
+                     coordinates, kept in sync via UpdateMap() in MainWindow.xaml.cs. -->
+                <DockPanel Grid.Column="2" Margin="6,0,0,0">
+                    <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Map"/>
+                    <TextBlock x:Name="MapUnavailableText" DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="DarkRed"
+                               Visibility="Collapsed" Margin="0,0,0,4"
+                               Text="Map unavailable - the WebView2 Runtime (bundled with most current Windows/Edge installs) could not be found."/>
+                    <wv2:WebView2 x:Name="MapView"/>
+                </DockPanel>
+            </Grid>
         </Grid>
 
         <!-- Status bar -->

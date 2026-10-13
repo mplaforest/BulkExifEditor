@@ -55,7 +55,16 @@ public class FileEntry : INotifyPropertyChanged
         }
     }
 
-    private static BitmapSource? TryLoadThumbnail(string path, int orientation)
+    private static BitmapSource? TryLoadThumbnail(string path, int orientation) =>
+        TryLoadBitmap(path, ThumbnailPixelWidth, orientation);
+
+    // Decoded on demand (not precomputed/cached like Thumbnail) since it's only needed
+    // while the file list's hover-preview panel is showing this entry - re-reads
+    // orientation fresh in case the EXIF tag was edited since this entry was loaded.
+    public BitmapSource? LoadPreview(int pixelWidth) =>
+        TryLoadBitmap(FilePath, pixelWidth, GetOrientation(Image));
+
+    private static BitmapSource? TryLoadBitmap(string path, int pixelWidth, int orientation)
     {
         try
         {
@@ -67,7 +76,7 @@ public class FileEntry : INotifyPropertyChanged
             {
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.DecodePixelWidth = ThumbnailPixelWidth;
+                bitmap.DecodePixelWidth = pixelWidth;
                 bitmap.StreamSource = stream;
                 bitmap.EndInit();
             }
