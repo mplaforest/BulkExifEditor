@@ -315,9 +315,27 @@ public partial class MainWindow : Window
     }
 
     // --- Hover preview ---
+    // Selecting a file "fixes" its image in the preview panel persistently; hovering a
+    // different thumbnail temporarily peeks at it after a 1s delay, then reverts back to
+    // the fixed/selected one (not to blank) once the mouse leaves.
 
     private const int PreviewPixelWidth = 900;
     private DispatcherTimer? _hoverTimer;
+
+    private void ShowPreviewFor(FileEntry? entry)
+    {
+        if (entry == null)
+        {
+            PreviewImage.Source = null;
+            PreviewImage.Visibility = Visibility.Collapsed;
+            PreviewPlaceholderText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        PreviewImage.Source = entry.LoadPreview(PreviewPixelWidth);
+        PreviewImage.Visibility = Visibility.Visible;
+        PreviewPlaceholderText.Visibility = Visibility.Collapsed;
+    }
 
     private void Thumbnail_MouseEnter(object sender, MouseEventArgs e)
     {
@@ -328,9 +346,7 @@ public partial class MainWindow : Window
         _hoverTimer.Tick += (_, _) =>
         {
             _hoverTimer!.Stop();
-            PreviewImage.Source = entry.LoadPreview(PreviewPixelWidth);
-            PreviewImage.Visibility = Visibility.Visible;
-            PreviewPlaceholderText.Visibility = Visibility.Collapsed;
+            ShowPreviewFor(entry);
         };
         _hoverTimer.Start();
     }
@@ -338,9 +354,7 @@ public partial class MainWindow : Window
     private void Thumbnail_MouseLeave(object sender, MouseEventArgs e)
     {
         _hoverTimer?.Stop();
-        PreviewImage.Visibility = Visibility.Collapsed;
-        PreviewImage.Source = null;
-        PreviewPlaceholderText.Visibility = Visibility.Visible;
+        ShowPreviewFor(_currentEntry);
     }
 
     private void FileNameEditor_GotFocus(object sender, RoutedEventArgs e)
@@ -477,6 +491,7 @@ public partial class MainWindow : Window
         _currentEntry = null;
         CurrentTags.Clear();
         UpdateMap();
+        ShowPreviewFor(null);
     }
 
     private void BulkRename_Click(object sender, RoutedEventArgs e)
@@ -606,6 +621,7 @@ public partial class MainWindow : Window
         _currentEntry = SelectedEntries.FirstOrDefault();
         RefreshCurrentTags();
         UpdateMap();
+        ShowPreviewFor(_currentEntry);
     }
 
     // Attribution tags shown first, always present as a real value or a blank editable
