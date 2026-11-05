@@ -234,15 +234,22 @@ public partial class MainWindow : Window
     };
 
     // Turns a filename into a candidate geocoder query, or null if nothing looks like a
-    // place name. Strategy: split on underscores/dashes, drop any token containing a
-    // digit (camera sequence numbers like "V7A8532" or "002") and known camera-noise
-    // words, and geocode whatever text words remain. Deliberately conservative - an
+    // place name. Strategy: split into individual words on underscores/dashes/commas/
+    // whitespace (anything a human would use as a word separator - not just "_"/"-",
+    // since a filename like "Bald Eagle, Glen Lake, Vt 2015-012" uses plain spaces and
+    // commas between words and only has a dash glued onto the trailing date/sequence
+    // number), drop any WORD containing a digit (camera sequence numbers like "V7A8532",
+    // "002", or a trailing year like "2015") and known camera-noise words, and geocode
+    // whatever text words remain. Splitting word-by-word first (rather than splitting on
+    // "-"/"_" only) matters: a coarser split previously bundled a whole phrase together
+    // with an attached number into one token, so the digit in the number caused the
+    // entire token - place name included - to be dropped. Deliberately conservative - an
     // all-numeric/camera-prefix filename (the common case) yields no query at all rather
     // than burning a geocode call on noise.
     private static string? GuessLocationQuery(string fileName)
     {
         string name = Path.GetFileNameWithoutExtension(fileName);
-        var tokens = name.Split(new[] { '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
+        var tokens = name.Split(new[] { '_', '-', ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
             .Where(t => !t.Any(char.IsDigit))
             .Where(t => !LocationGuessStopWords.Contains(t))
             .ToList();
