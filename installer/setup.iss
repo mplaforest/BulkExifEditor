@@ -28,7 +28,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Files]
-Source: "..\bin\Release\net8.0-windows\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; GoogleMapsApiKey.txt is excluded deliberately - it's the developer's own personal
+; Google Maps key (gitignored, never committed) and this installer output IS committed
+; to the public GitHub repo, so bundling it would publicly leak the key. The app already
+; degrades gracefully with the map panel disabled when this file is absent (see
+; InitMapAsync in MainWindow.xaml.cs) - an end user who wants the map feature supplies
+; their own key by dropping a GoogleMapsApiKey.txt next to the installed exe's MapAssets\.
+Source: "..\bin\Release\net8.0-windows\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "MapAssets\GoogleMapsApiKey.txt"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
