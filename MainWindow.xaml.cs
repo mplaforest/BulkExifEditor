@@ -196,19 +196,59 @@ public partial class MainWindow : Window
 
     private void UpdateMap()
     {
-        var points = SelectedEntries
-            .Select(entry => TryGetGpsPoint(entry, out double lat, out double lon)
-                ? new { Lat = lat, Lon = lon, Name = entry.FileName }
-                : null)
-            .Where(p => p != null)
-            .ToList();
+        var points = new List<object>();
+        var guesses = new List<object>();
 
-        string script = $"setMarkers({JsonSerializer.Serialize(points)})";
+        foreach (var entry in SelectedEntries)
+        {
+            if (TryGetGpsPoint(entry, out double lat, out double lon))
+            {
+                points.Add(new { Lat = lat, Lon = lon, Name = entry.FileName });
+                continue;
+            }
+
+            // No GPS EXIF data - fall back to guessing a place name from the filename
+            // itself (e.g. "_Bomoseen_Vermont_Vt_002.CR3" -> "Bomoseen Vermont Vt"), which
+            // map.html geocodes client-side via Google's Geocoder and shows as a distinct
+            // orange pin if it finds a match, so it's never mistaken for a real GPS fix.
+            string? query = GuessLocationQuery(entry.FileName);
+            if (query != null)
+                guesses.Add(new { Name = entry.FileName, Query = query });
+        }
+
+        string script = $"setMarkers({JsonSerializer.Serialize(points)}, {JsonSerializer.Serialize(guesses)})";
 
         if (_mapReady && MapView.CoreWebView2 != null)
             _ = MapView.CoreWebView2.ExecuteScriptAsync(script);
         else
             _pendingMapScript = script;
+    }
+
+    // Camera-generated filename noise that should never be sent to the geocoder as part
+    // of a place-name guess, even though these tokens contain no digits themselves (the
+    // digit-stripping pass in GuessLocationQuery wouldn't catch them on its own).
+    private static readonly HashSet<string> LocationGuessStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "IMG", "DSC", "DSCN", "DCIM", "PXL", "GOPR", "MOV", "VID", "RAW",
+        "EDIT", "EDITED", "FINAL", "COPY", "EXPORT", "PHOTO", "PIC", "PICTURE",
+    };
+
+    // Turns a filename into a candidate geocoder query, or null if nothing looks like a
+    // place name. Strategy: split on underscores/dashes, drop any token containing a
+    // digit (camera sequence numbers like "V7A8532" or "002") and known camera-noise
+    // words, and geocode whatever text words remain. Deliberately conservative - an
+    // all-numeric/camera-prefix filename (the common case) yields no query at all rather
+    // than burning a geocode call on noise.
+    private static string? GuessLocationQuery(string fileName)
+    {
+        string name = Path.GetFileNameWithoutExtension(fileName);
+        var tokens = name.Split(new[] { '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => !t.Any(char.IsDigit))
+            .Where(t => !LocationGuessStopWords.Contains(t))
+            .ToList();
+
+        if (tokens.Count == 0) return null;
+        return string.Join(" ", tokens);
     }
 
     // Shows a status message with a brief colored flash that fades out, so an

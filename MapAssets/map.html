@@ -13,7 +13,12 @@
   // its script has loaded; setMarkers() may be called by C# before that happens, so it
   // just queues the latest points until the map object actually exists.
   var map;
-  var pendingPoints = null;
+  var geocoder;
+  var pendingArgs = null;
+
+  // Query text -> {lat,lng} | null (null means "looked up, no match" - cached too, so
+  // a photo with an ungeocodable filename doesn't retry every time the selection changes).
+  var geocodeCache = {};
 
   function initMap() {
     map = new google.maps.Map(document.getElementById('map'), {
@@ -24,10 +29,12 @@
       mapTypeControl: true,
       fullscreenControl: false
     });
-    if (pendingPoints) {
-      var p = pendingPoints;
-      pendingPoints = null;
-      setMarkers(p);
+    geocoder = new google.maps.Geocoder();
+
+    if (pendingArgs) {
+      var a = pendingArgs;
+      pendingArgs = null;
+      setMarkers(a.points, a.guesses);
     }
 
     // Clicking a marker fires the marker's own click, not this one, so this only
@@ -40,27 +47,75 @@
   }
 
   var markers = [];
-  function setMarkers(points) {
-    if (!map) { pendingPoints = points; return; }
+
+  // `points` are photos with real GPS EXIF data (normal pins). `guesses` are photos
+  // with no GPS data but a place-name-looking fragment pulled from their filename (e.g.
+  // "Bomoseen Vermont Vt" from "_Bomoseen_Vermont_Vt_002.CR3") - each is geocoded via
+  // Google's Geocoder and shown as an orange pin if a match is found, clearly labeled as
+  // approximate so it's never confused with a real recorded GPS position.
+  function setMarkers(points, guesses) {
+    guesses = guesses || [];
+
+    if (!map) { pendingArgs = { points: points, guesses: guesses }; return; }
 
     markers.forEach(function(m) { m.setMap(null); });
     markers = [];
 
-    if (!points.length) {
-      map.setCenter({ lat: 20, lng: 0 });
-      map.setZoom(2);
-      return;
-    }
-
     var bounds = new google.maps.LatLngBounds();
+    var hasAny = false;
+
     points.forEach(function(p) {
       var pos = { lat: p.Lat, lng: p.Lon };
       var m = new google.maps.Marker({ position: pos, map: map, title: p.Name });
       markers.push(m);
       bounds.extend(pos);
+      hasAny = true;
     });
 
-    if (points.length === 1) {
+    var pendingGeocodes = guesses.length;
+    if (pendingGeocodes === 0) {
+      finishPlacement(bounds, hasAny);
+      return;
+    }
+
+    guesses.forEach(function(g) {
+      resolveGuess(g.Query, function(pos) {
+        if (pos) {
+          var m = new google.maps.Marker({
+            position: pos,
+            map: map,
+            title: g.Name + ' - approximate location guessed from filename ("' + g.Query + '")',
+            icon: 'https://maps.google.com/mapfiles/ms/icons/orange-dot.png'
+          });
+          markers.push(m);
+          bounds.extend(pos);
+          hasAny = true;
+        }
+        pendingGeocodes--;
+        if (pendingGeocodes === 0) finishPlacement(bounds, hasAny);
+      });
+    });
+  }
+
+  function resolveGuess(query, callback) {
+    if (geocodeCache.hasOwnProperty(query)) { callback(geocodeCache[query]); return; }
+    geocoder.geocode({ address: query }, function(results, status) {
+      var pos = (status === 'OK' && results && results[0])
+        ? { lat: results[0].geometry.location.lat(), lng: results[0].geometry.location.lng() }
+        : null;
+      geocodeCache[query] = pos;
+      callback(pos);
+    });
+  }
+
+  function finishPlacement(bounds, hasAny) {
+    if (!hasAny) {
+      map.setCenter({ lat: 20, lng: 0 });
+      map.setZoom(2);
+      return;
+    }
+
+    if (markers.length === 1) {
       map.setCenter(bounds.getCenter());
       map.setZoom(14);
     } else {
