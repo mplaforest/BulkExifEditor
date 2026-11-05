@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="EXIF Batch Metadata Editor v1.0.30" Height="1100" Width="1400"
+        Title="EXIF Batch Metadata Editor v1.0.31" Height="1100" Width="1400"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -59,10 +59,12 @@
                 </Grid.RowDefinitions>
                 <DockPanel Grid.Row="0">
                 <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap"
-                           Text="Files (drag and drop files/folders here - multi-select to edit tags across all of them at once)"/>
+                           Text="Files (drag and drop files/folders here, or drag selected files out to another app - multi-select to edit tags across all of them at once)"/>
                 <ListBox x:Name="FileListBox" SelectionMode="Extended"
                          SelectionChanged="FileListBox_SelectionChanged"
                          MouseDoubleClick="FileListBox_MouseDoubleClick"
+                         PreviewMouseLeftButtonDown="FileListBox_PreviewMouseLeftButtonDown"
+                         PreviewMouseMove="FileListBox_PreviewMouseMove"
                          AllowDrop="True" DragEnter="FileListBox_DragEnter" Drop="FileListBox_Drop">
                     <ListBox.ItemTemplate>
                         <DataTemplate>

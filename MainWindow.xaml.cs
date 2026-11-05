@@ -401,6 +401,49 @@ public partial class MainWindow : Window
         ShowStatus($"Renamed to {entry.FileName}.");
     }
 
+    // --- Drag files out to another app (Explorer, email, etc.) ---
+
+    private Point _dragStartPoint;
+    private bool _dragArmed;
+
+    private void FileListBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragStartPoint = e.GetPosition(null);
+        // Don't arm a drag if the click landed on the editable filename TextBox - that
+        // click is for placing a caret/selecting text to rename, not for dragging the
+        // file out. Walk up the visual tree from the click point to check.
+        _dragArmed = FindAncestor<TextBox>(e.OriginalSource as DependencyObject) == null;
+    }
+
+    private void FileListBox_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragArmed || e.LeftButton != MouseButtonState.Pressed) return;
+        if (FileListBox.SelectedItems.Count == 0) return;
+
+        Point current = e.GetPosition(null);
+        if (Math.Abs(current.X - _dragStartPoint.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(current.Y - _dragStartPoint.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        _dragArmed = false;
+
+        string[] paths = FileListBox.SelectedItems.Cast<FileEntry>().Select(f => f.FilePath).ToArray();
+        if (paths.Length == 0) return;
+
+        var data = new DataObject(DataFormats.FileDrop, paths);
+        DragDrop.DoDragDrop(FileListBox, data, DragDropEffects.Copy);
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
+    {
+        while (source != null)
+        {
+            if (source is T match) return match;
+            source = VisualTreeHelper.GetParent(source);
+        }
+        return null;
+    }
+
     private void FileListBox_DragEnter(object sender, DragEventArgs e)
     {
         e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
