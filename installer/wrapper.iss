@@ -13,7 +13,7 @@
 // statically-named sibling file avoids both problems entirely.
 
 #define MyAppName "EXIF Batch Metadata Editor"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "Mark LaForest"
 #define CoreExeName "EBME-Setup-" + MyAppVersion + "-core.exe"
 
