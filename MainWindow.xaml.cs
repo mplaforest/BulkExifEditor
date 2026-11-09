@@ -568,14 +568,28 @@ public partial class MainWindow : Window
         LoadingProgressBar.Maximum = pathList.Count;
         LoadingProgressBar.Value = 0;
 
+        // Same file (by full path) already in the list shouldn't be loaded again -
+        // checked up front and kept current as files are added, rather than letting
+        // duplicates slip in (e.g. dragging the same folder in twice).
+        var loadedPaths = new HashSet<string>(Files.Select(f => f.FilePath), StringComparer.OrdinalIgnoreCase);
+
         var errors = new List<string>();
         int completed = 0;
+        int skipped = 0;
 
         try
         {
             foreach (var path in pathList)
             {
                 LoadingStatusText.Text = $"Loading {completed + 1} of {pathList.Count}: {Path.GetFileName(path)}";
+
+                if (!loadedPaths.Add(path))
+                {
+                    skipped++;
+                    completed++;
+                    LoadingProgressBar.Value = completed;
+                    continue;
+                }
 
                 try
                 {
@@ -600,6 +614,9 @@ public partial class MainWindow : Window
             AddFilesButton.IsEnabled = true;
             AddFolderButton.IsEnabled = true;
         }
+
+        if (skipped > 0)
+            ShowStatus($"Skipped {skipped} file(s) already loaded.");
 
         if (errors.Count > 0)
             MessageBox.Show(this, "Some files could not be loaded:\n" + string.Join("\n", errors),
