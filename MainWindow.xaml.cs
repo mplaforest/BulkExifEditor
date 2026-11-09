@@ -452,14 +452,46 @@ public partial class MainWindow : Window
 
     private Point _dragStartPoint;
     private bool _dragArmed;
+    private FileEntry? _deferredSelectionEntry;
 
     private void FileListBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _dragStartPoint = e.GetPosition(null);
+        _deferredSelectionEntry = null;
         // Don't arm a drag if the click landed on the editable filename TextBox - that
         // click is for placing a caret/selecting text to rename, not for dragging the
         // file out. Walk up the visual tree from the click point to check.
         _dragArmed = FindAncestor<TextBox>(e.OriginalSource as DependencyObject) == null;
+        if (!_dragArmed) return;
+
+        // WPF's default behavior collapses the selection down to just the clicked item
+        // immediately on mouse-down, even if it was already part of a larger selection -
+        // which meant dragging always only ever picked up one file, no matter how many
+        // were selected beforehand. Windows Explorer avoids this by deferring that
+        // collapse until mouse-up, so a drag starting from an already-selected item can
+        // still pick up the whole selection. Only intervene for a plain click (no Ctrl/
+        // Shift) on an item that's already selected - anything else should behave as
+        // WPF normally would (click a new item to select just it, Ctrl/Shift to toggle
+        // or range-select).
+        var item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (item != null && item.IsSelected && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            _deferredSelectionEntry = item.DataContext as FileEntry;
+        }
+    }
+
+    private void FileListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        // Only runs if PreviewMouseLeftButtonDown deferred a selection-collapse above and
+        // no drag ended up starting (PreviewMouseMove clears this once a drag begins) -
+        // i.e. this was just a plain click on an already-selected item, so now apply the
+        // click's normal effect (select just this one).
+        if (_deferredSelectionEntry != null)
+        {
+            FileListBox.SelectedItem = _deferredSelectionEntry;
+            _deferredSelectionEntry = null;
+        }
     }
 
     private void FileListBox_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -473,6 +505,7 @@ public partial class MainWindow : Window
             return;
 
         _dragArmed = false;
+        _deferredSelectionEntry = null;
 
         string[] paths = FileListBox.SelectedItems.Cast<FileEntry>().Select(f => f.FilePath).ToArray();
         if (paths.Length == 0) return;
