@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
@@ -10,6 +11,8 @@ using ExifLibrary;
 
 namespace ExifBatchEditor.Models;
 
+public enum RotationKind { Left90, Right90, Flip180 }
+
 public class FileEntry : INotifyPropertyChanged
 {
     private const int ThumbnailPixelWidth = 48;
@@ -19,7 +22,7 @@ public class FileEntry : INotifyPropertyChanged
     public string FilePath { get; private set; }
     public string FileName => Path.GetFileName(FilePath);
     public ImageFile Image { get; private set; }
-    public BitmapSource? Thumbnail { get; }
+    public BitmapSource? Thumbnail { get; private set; }
 
     // Edit panel slider state - see PhotoEditState for why this is in-memory-only until
     // SaveEdit() bakes it into the actual file.
@@ -220,6 +223,57 @@ public class FileEntry : INotifyPropertyChanged
         var group = new TransformGroup();
         foreach (var t in transforms) group.Children.Add(t);
         return group;
+    }
+
+    // Rotating by rewriting the EXIF Orientation tag (not the pixels) is lossless and
+    // instant - the same trick most photo tools use for JPEGs - since this app's own
+    // thumbnail/preview rendering (GetOrientation/ApplyOrientation above) already
+    // respects that tag to display the photo right-side-up. Each table below composes
+    // "apply this rotation to however the photo currently displays" with whatever
+    // raw-pixel orientation it already had, landing on the single new Orientation value
+    // that represents the combined transform. The {1,3,6,8} and {2,4,5,7} orientation
+    // values each form their own closed 4-cycle under repeated 90 rotation (the second
+    // set is the mirrored equivalents) - verified by hand before shipping this.
+    private static readonly Dictionary<int, int> Rotate90CwTable = new()
+    {
+        [1] = 6, [2] = 7, [3] = 8, [4] = 5, [5] = 2, [6] = 3, [7] = 4, [8] = 1,
+    };
+    private static readonly Dictionary<int, int> Rotate90CcwTable = new()
+    {
+        [1] = 8, [2] = 5, [3] = 6, [4] = 7, [5] = 4, [6] = 1, [7] = 2, [8] = 3,
+    };
+    private static readonly Dictionary<int, int> Rotate180Table = new()
+    {
+        [1] = 3, [2] = 4, [3] = 1, [4] = 2, [5] = 7, [6] = 8, [7] = 5, [8] = 6,
+    };
+
+    // Returns an error message on failure, or null on success.
+    public string? Rotate(RotationKind kind)
+    {
+        var table = kind switch
+        {
+            RotationKind.Left90 => Rotate90CcwTable,
+            RotationKind.Right90 => Rotate90CwTable,
+            RotationKind.Flip180 => Rotate180Table,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        int next = table[GetOrientation(Image)];
+
+        try
+        {
+            Image.Properties.Set(new ExifUShort(ExifTag.Orientation, (ushort)next));
+            IsDirty = true;
+            SaveImageWithRetry(Image, FilePath);
+            IsDirty = false;
+
+            Thumbnail = TryLoadThumbnail(FilePath, GetOrientation(Image));
+            OnPropertyChanged(nameof(Thumbnail));
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return $"Could not rotate: {ex.Message}";
+        }
     }
 
     // Renames the file on disk and updates FilePath/FileName to match. Returns an

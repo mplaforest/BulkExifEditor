@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="EXIF Batch Metadata Editor v3.0.4" Height="1100" Width="1740"
+        Title="EXIF Batch Metadata Editor v3.0.5" Height="1100" Width="1740"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -205,6 +205,17 @@
                      shows the live result of the Edit panel's sliders for the selected file. -->
                 <DockPanel Grid.Column="0" Margin="0,0,6,0">
                     <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Preview"/>
+                    <!-- Rotates the selected file(s) losslessly via the EXIF Orientation tag
+                         (see FileEntry.Rotate) - no pixels are touched, so this is instant and
+                         never degrades the image, unlike a real re-encode. -->
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="&#x21BA;" FontSize="18" Padding="8,2" Margin="0,0,6,0"
+                                Click="RotateLeft_Click" ToolTip="Rotate Left 90°"/>
+                        <Button Content="&#x21BB;" FontSize="18" Padding="8,2" Margin="0,0,6,0"
+                                Click="RotateRight_Click" ToolTip="Rotate Right 90°"/>
+                        <Button Content="180°" FontSize="12" Padding="8,4"
+                                Click="Rotate180_Click" ToolTip="Rotate 180°"/>
+                    </StackPanel>
                     <Grid x:Name="PreviewHost">
                         <TextBlock x:Name="PreviewPlaceholderText" Text="Hover over a thumbnail to preview"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"

@@ -796,6 +796,47 @@ public partial class MainWindow : Window
         ShowPreviewFor(null);
     }
 
+    private void RotateLeft_Click(object sender, RoutedEventArgs e) => RotateSelected(RotationKind.Left90);
+    private void RotateRight_Click(object sender, RoutedEventArgs e) => RotateSelected(RotationKind.Right90);
+    private void Rotate180_Click(object sender, RoutedEventArgs e) => RotateSelected(RotationKind.Flip180);
+
+    private void RotateSelected(RotationKind kind)
+    {
+        var targets = SelectedEntries;
+        if (targets.Count == 0)
+        {
+            MessageBox.Show(this, "Select a file first.", "No file selected");
+            return;
+        }
+
+        var errors = new List<string>();
+        int applied = 0;
+        foreach (var entry in targets)
+        {
+            string? error = entry.Rotate(kind);
+            if (error != null)
+                errors.Add($"{entry.FileName}: {error}");
+            else
+                applied++;
+        }
+
+        // The currently-displayed preview/histogram was rendered from a cached base
+        // bitmap decoded with the OLD orientation - reload it so it reflects the rotation.
+        if (_currentEntry != null && targets.Contains(_currentEntry))
+        {
+            _currentPreviewBase = _currentEntry.LoadPreview(PreviewPixelWidth);
+            RenderEditedPreview();
+        }
+
+        ShowStatus(targets.Count > 1
+            ? $"Rotated {applied} of {targets.Count} file(s)."
+            : applied > 0 ? "Rotated." : "");
+
+        if (errors.Count > 0)
+            MessageBox.Show(this, "Some files could not be rotated:\n" + string.Join("\n", errors),
+                "Rotate errors", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
     private void BulkRename_Click(object sender, RoutedEventArgs e)
     {
         var targets = SelectedEntries;
