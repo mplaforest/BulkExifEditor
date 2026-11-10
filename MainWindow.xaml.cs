@@ -7,10 +7,13 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using ExifBatchEditor.Imaging;
 using ExifBatchEditor.Models;
 using ExifLibrary;
 using Microsoft.Web.WebView2.Core;
@@ -30,7 +33,38 @@ public partial class MainWindow : Window
         FileListBox.ItemsSource = Files;
         TagGrid.ItemsSource = CurrentTags;
 
+        _editRecomputeTimer.Tick += (_, _) =>
+        {
+            _editRecomputeTimer.Stop();
+            RenderEditedPreview();
+        };
+
         _ = InitMapAsync();
+    }
+
+    // Switches which entry the Edit panel/live preview pipeline is wired to - keeps the
+    // PhotoEditState.PropertyChanged subscription (drives the live preview) in sync with
+    // whichever entry is actually selected, and resets the crop overlay toggle since
+    // crop coordinates are specific to one image's dimensions.
+    private void SetCurrentEntry(FileEntry? entry)
+    {
+        if (_currentEntry != null)
+            _currentEntry.Edit.PropertyChanged -= EditState_PropertyChanged;
+
+        _currentEntry = entry;
+        EditPanelRoot.DataContext = entry;
+        CropToggleButton.IsChecked = false;
+
+        if (_currentEntry != null)
+            _currentEntry.Edit.PropertyChanged += EditState_PropertyChanged;
+    }
+
+    private readonly DispatcherTimer _editRecomputeTimer = new() { Interval = TimeSpan.FromMilliseconds(20) };
+
+    private void EditState_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        _editRecomputeTimer.Stop();
+        _editRecomputeTimer.Start();
     }
 
     // --- Map ---
@@ -369,19 +403,256 @@ public partial class MainWindow : Window
     private const int PreviewPixelWidth = 900;
     private DispatcherTimer? _hoverTimer;
 
+    // The unedited, orientation-corrected base bitmap at preview resolution for whichever
+    // entry the Edit panel is currently wired to (_currentEntry) - reloaded whenever that
+    // changes, then the Edit sliders' live pipeline (RenderEditedPreview) re-renders from
+    // this base on every adjustment instead of re-decoding the file from disk each time.
+    private BitmapSource? _currentPreviewBase;
+
     private void ShowPreviewFor(FileEntry? entry)
     {
         if (entry == null)
         {
+            _currentPreviewBase = null;
             PreviewImage.Source = null;
             PreviewImage.Visibility = Visibility.Collapsed;
             PreviewPlaceholderText.Visibility = Visibility.Visible;
+            HistogramImage.Source = null;
+            CropOverlayCanvas.Visibility = Visibility.Collapsed;
             return;
         }
 
+        if (entry == _currentEntry)
+        {
+            // The actual selected/edited file - run it through the live adjustment
+            // pipeline (even with every slider at neutral, so Save/Revert/crop stay
+            // consistent with whatever's actually displayed).
+            _currentPreviewBase = entry.LoadPreview(PreviewPixelWidth);
+            RenderEditedPreview();
+            return;
+        }
+
+        // A different file just being hover-peeked (see Thumbnail_MouseEnter/Leave) -
+        // show it plain/unedited; it reverts back to _currentEntry's edited preview via
+        // ShowPreviewFor(_currentEntry) as soon as the hover ends.
         PreviewImage.Source = entry.LoadPreview(PreviewPixelWidth);
         PreviewImage.Visibility = Visibility.Visible;
         PreviewPlaceholderText.Visibility = Visibility.Collapsed;
+    }
+
+    private void RenderEditedPreview()
+    {
+        if (_currentEntry == null || _currentPreviewBase == null)
+        {
+            PreviewImage.Source = null;
+            PreviewImage.Visibility = Visibility.Collapsed;
+            PreviewPlaceholderText.Visibility = Visibility.Visible;
+            HistogramImage.Source = null;
+            return;
+        }
+
+        float[] grainNoise = _currentEntry.GetOrCreatePreviewGrainNoise(
+            _currentPreviewBase.PixelWidth * _currentPreviewBase.PixelHeight);
+        WriteableBitmap adjusted = PhotoAdjustments.Apply(_currentPreviewBase, _currentEntry.Edit, grainNoise);
+
+        PreviewImage.Source = adjusted;
+        PreviewImage.Visibility = Visibility.Visible;
+        PreviewPlaceholderText.Visibility = Visibility.Collapsed;
+
+        RenderHistogram(adjusted);
+        UpdateCropOverlayBounds();
+    }
+
+    private void RenderHistogram(BitmapSource adjusted)
+    {
+        int[] buckets = PhotoAdjustments.ComputeLuminanceHistogram(adjusted);
+        int max = Math.Max(1, buckets.Max());
+
+        const int w = 256, h = 80;
+        var pixels = new byte[w * h * 4];
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            pixels[i] = 24; pixels[i + 1] = 24; pixels[i + 2] = 24; pixels[i + 3] = 255;
+        }
+
+        for (int x = 0; x < w; x++)
+        {
+            // Square-root scale, not linear - a photo's luminance histogram is usually
+            // dominated by one or two tall spikes that would otherwise flatten every
+            // other bucket down to an invisible sliver.
+            int barHeight = (int)(Math.Sqrt((double)buckets[x] / max) * (h - 1));
+            for (int y = 0; y < barHeight; y++)
+            {
+                int py = h - 1 - y;
+                int idx = (py * w + x) * 4;
+                pixels[idx] = 210; pixels[idx + 1] = 210; pixels[idx + 2] = 210; pixels[idx + 3] = 255;
+            }
+        }
+
+        var bmp = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+        bmp.WritePixels(new Int32Rect(0, 0, w, h), pixels, w * 4, 0);
+        bmp.Freeze();
+        HistogramImage.Source = bmp;
+    }
+
+    private void PreviewHost_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateCropOverlayBounds();
+
+    // Positions/sizes CropOverlayCanvas to exactly match PreviewImage's actual rendered
+    // rect within PreviewHost - Stretch="Uniform" letterboxes rather than filling the
+    // whole cell, so the overlay can't just match the container's own bounds.
+    private void UpdateCropOverlayBounds()
+    {
+        if (PreviewImage.Source is not BitmapSource bmp)
+        {
+            CropOverlayCanvas.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        double containerW = PreviewHost.ActualWidth;
+        double containerH = PreviewHost.ActualHeight;
+        if (containerW <= 0 || containerH <= 0) return;
+
+        double scale = Math.Min(containerW / bmp.PixelWidth, containerH / bmp.PixelHeight);
+        double renderedW = bmp.PixelWidth * scale;
+        double renderedH = bmp.PixelHeight * scale;
+
+        Canvas.SetLeft(CropOverlayCanvas, (containerW - renderedW) / 2);
+        Canvas.SetTop(CropOverlayCanvas, (containerH - renderedH) / 2);
+        CropOverlayCanvas.Width = renderedW;
+        CropOverlayCanvas.Height = renderedH;
+
+        if (CropToggleButton.IsChecked == true)
+            PositionCropRectFromState();
+    }
+
+    private void PositionCropRectFromState()
+    {
+        if (_currentEntry == null) return;
+        var crop = _currentEntry.Edit.Crop;
+        double w = CropOverlayCanvas.Width;
+        double h = CropOverlayCanvas.Height;
+
+        Canvas.SetLeft(CropRectBorder, crop.Left * w);
+        Canvas.SetTop(CropRectBorder, crop.Top * h);
+        CropRectBorder.Width = Math.Max(20, (crop.Right - crop.Left) * w);
+        CropRectBorder.Height = Math.Max(20, (crop.Bottom - crop.Top) * h);
+    }
+
+    private void UpdateCropStateFromRect()
+    {
+        if (_currentEntry == null) return;
+        double w = CropOverlayCanvas.Width;
+        double h = CropOverlayCanvas.Height;
+        if (w <= 0 || h <= 0) return;
+
+        double left = Canvas.GetLeft(CropRectBorder);
+        double top = Canvas.GetTop(CropRectBorder);
+        _currentEntry.Edit.Crop = new NormalizedCropRect(
+            Clamp01(left / w), Clamp01(top / h),
+            Clamp01((left + CropRectBorder.Width) / w), Clamp01((top + CropRectBorder.Height) / h));
+    }
+
+    private static double Clamp01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
+
+    private void CropToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        bool on = CropToggleButton.IsChecked == true;
+        CropOverlayCanvas.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        if (!on || _currentEntry == null) return;
+
+        UpdateCropOverlayBounds();
+        if (_currentEntry.Edit.Crop.IsFullFrame)
+        {
+            // First time opening crop for this file - start with a handle-sized inset
+            // from the full frame so all four corner handles are immediately visible
+            // and grabbable rather than sitting flush on the image's own edges.
+            Canvas.SetLeft(CropRectBorder, 10);
+            Canvas.SetTop(CropRectBorder, 10);
+            CropRectBorder.Width = Math.Max(20, CropOverlayCanvas.Width - 20);
+            CropRectBorder.Height = Math.Max(20, CropOverlayCanvas.Height - 20);
+            UpdateCropStateFromRect();
+        }
+    }
+
+    private void CropMoveThumb_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        double maxLeft = Math.Max(0, CropOverlayCanvas.Width - CropRectBorder.Width);
+        double maxTop = Math.Max(0, CropOverlayCanvas.Height - CropRectBorder.Height);
+        double left = Math.Clamp(Canvas.GetLeft(CropRectBorder) + e.HorizontalChange, 0, maxLeft);
+        double top = Math.Clamp(Canvas.GetTop(CropRectBorder) + e.VerticalChange, 0, maxTop);
+
+        Canvas.SetLeft(CropRectBorder, left);
+        Canvas.SetTop(CropRectBorder, top);
+        UpdateCropStateFromRect();
+    }
+
+    private void CropResizeThumb_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is not Thumb thumb) return;
+        const double minSize = 20;
+
+        double left = Canvas.GetLeft(CropRectBorder);
+        double top = Canvas.GetTop(CropRectBorder);
+        double right = left + CropRectBorder.Width;
+        double bottom = top + CropRectBorder.Height;
+
+        switch (thumb.Tag as string)
+        {
+            case "TopLeft":
+                left = Math.Clamp(left + e.HorizontalChange, 0, right - minSize);
+                top = Math.Clamp(top + e.VerticalChange, 0, bottom - minSize);
+                break;
+            case "TopRight":
+                right = Math.Clamp(right + e.HorizontalChange, left + minSize, CropOverlayCanvas.Width);
+                top = Math.Clamp(top + e.VerticalChange, 0, bottom - minSize);
+                break;
+            case "BottomLeft":
+                left = Math.Clamp(left + e.HorizontalChange, 0, right - minSize);
+                bottom = Math.Clamp(bottom + e.VerticalChange, top + minSize, CropOverlayCanvas.Height);
+                break;
+            case "BottomRight":
+                right = Math.Clamp(right + e.HorizontalChange, left + minSize, CropOverlayCanvas.Width);
+                bottom = Math.Clamp(bottom + e.VerticalChange, top + minSize, CropOverlayCanvas.Height);
+                break;
+        }
+
+        Canvas.SetLeft(CropRectBorder, left);
+        Canvas.SetTop(CropRectBorder, top);
+        CropRectBorder.Width = right - left;
+        CropRectBorder.Height = bottom - top;
+        UpdateCropStateFromRect();
+    }
+
+    private void SaveEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentEntry == null) return;
+        if (!_currentEntry.Edit.HasAnyEdit)
+        {
+            ShowStatus("No edits to save.");
+            return;
+        }
+
+        string? error = _currentEntry.SaveEdit();
+        if (error != null)
+        {
+            MessageBox.Show(this, error, "Save edit failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        // The file's actual pixels changed, so the cached preview base needs reloading
+        // too, not just the (already-reset-by-SaveEdit) slider values.
+        _currentPreviewBase = _currentEntry.LoadPreview(PreviewPixelWidth);
+        CropToggleButton.IsChecked = false;
+        RenderEditedPreview();
+        ShowStatus($"Saved edits to {_currentEntry.FileName}.");
+    }
+
+    private void RevertEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentEntry == null) return;
+        CropToggleButton.IsChecked = false;
+        _currentEntry.Edit.Reset();
+        ShowStatus("Reverted edits.");
     }
 
     private void Thumbnail_MouseEnter(object sender, MouseEventArgs e)
@@ -628,7 +899,7 @@ public partial class MainWindow : Window
         foreach (var item in FileListBox.SelectedItems.Cast<FileEntry>().ToList())
             Files.Remove(item);
 
-        _currentEntry = null;
+        SetCurrentEntry(null);
         CurrentTags.Clear();
         UpdateMap();
         ShowPreviewFor(null);
@@ -803,7 +1074,7 @@ public partial class MainWindow : Window
         // The grid displays the first selected file (in list order) as an editable
         // template. If more than one file is selected, edits made in the grid are applied
         // (and saved) to every selected file, not just this one.
-        _currentEntry = SelectedEntries.FirstOrDefault();
+        SetCurrentEntry(SelectedEntries.FirstOrDefault());
         RefreshCurrentTags();
         UpdateMap();
         ShowPreviewFor(_currentEntry);

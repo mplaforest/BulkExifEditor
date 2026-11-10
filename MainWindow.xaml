@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="EXIF Batch Metadata Editor v2.0.5" Height="1100" Width="1400"
+        Title="EXIF Batch Metadata Editor v3.0.0" Height="1100" Width="1740"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -190,31 +190,254 @@
 
             <GridSplitter Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Center" Height="12" Background="LightGray"/>
 
-            <!-- Bottom: preview | map -->
+            <!-- Bottom: preview | edit | map -->
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="340"/>
                     <ColumnDefinition Width="12"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Preview: hovering a thumbnail in the file list for 1 second shows a larger
-                     version here (see Thumbnail_MouseEnter/Leave in MainWindow.xaml.cs). -->
+                     version here (see Thumbnail_MouseEnter/Leave in MainWindow.xaml.cs). Also
+                     shows the live result of the Edit panel's sliders for the selected file. -->
                 <DockPanel Grid.Column="0" Margin="0,0,6,0">
                     <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Preview"/>
-                    <Grid>
+                    <Grid x:Name="PreviewHost" SizeChanged="PreviewHost_SizeChanged">
                         <TextBlock x:Name="PreviewPlaceholderText" Text="Hover over a thumbnail to preview"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    Foreground="Gray" FontStyle="Italic" TextWrapping="Wrap" TextAlignment="Center"/>
                         <Image x:Name="PreviewImage" Stretch="Uniform" Visibility="Collapsed"/>
+
+                        <!-- Positioned/sized in code (UpdateCropOverlayBounds) to exactly match
+                             PreviewImage's actual rendered rect within this cell - Stretch="Uniform"
+                             letterboxes, so this can't just fill the whole Grid cell. -->
+                        <Canvas x:Name="CropOverlayCanvas" Visibility="Collapsed" ClipToBounds="True">
+                            <Border x:Name="CropRectBorder" BorderBrush="White" BorderThickness="1.5"
+                                    Background="#01000000">
+                                <Grid>
+                                    <Thumb x:Name="CropMoveThumb" Background="Transparent"
+                                           DragDelta="CropMoveThumb_DragDelta" Cursor="SizeAll"/>
+                                    <Thumb x:Name="CropTopLeftThumb" Width="12" Height="12" Background="White"
+                                           HorizontalAlignment="Left" VerticalAlignment="Top"
+                                           Margin="-6,-6,0,0" Cursor="SizeNWSE"
+                                           DragDelta="CropResizeThumb_DragDelta" Tag="TopLeft"/>
+                                    <Thumb x:Name="CropTopRightThumb" Width="12" Height="12" Background="White"
+                                           HorizontalAlignment="Right" VerticalAlignment="Top"
+                                           Margin="0,-6,-6,0" Cursor="SizeNESW"
+                                           DragDelta="CropResizeThumb_DragDelta" Tag="TopRight"/>
+                                    <Thumb x:Name="CropBottomLeftThumb" Width="12" Height="12" Background="White"
+                                           HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                           Margin="-6,0,0,-6" Cursor="SizeNESW"
+                                           DragDelta="CropResizeThumb_DragDelta" Tag="BottomLeft"/>
+                                    <Thumb x:Name="CropBottomRightThumb" Width="12" Height="12" Background="White"
+                                           HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                           Margin="0,0,-6,-6" Cursor="SizeNWSE"
+                                           DragDelta="CropResizeThumb_DragDelta" Tag="BottomRight"/>
+                                </Grid>
+                            </Border>
+                        </Canvas>
                     </Grid>
                 </DockPanel>
 
                 <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="LightGray"/>
 
+                <!-- Edit: Light/Color/Effects sliders for the selected file, applied live to
+                     the Preview panel. Nothing here is saved until the Save button is clicked
+                     (see PhotoEditState/PhotoAdjustments/FileEntry.SaveEdit). DataContext is set
+                     in code (UpdatePreview et al.) to the selected file, so {Binding Edit} below
+                     resolves to its PhotoEditState and everything inside binds directly to it. -->
+                <DockPanel x:Name="EditPanelRoot" Grid.Column="2" Margin="6,0,6,0">
+                    <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" Text="Edit"/>
+
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="Save" Padding="8,4" Margin="0,0,6,0" Click="SaveEdit_Click" Background="LightGreen"/>
+                        <Button Content="Revert" Padding="8,4" Click="RevertEdit_Click"/>
+                    </StackPanel>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding Edit}">
+                        <StackPanel Margin="0,0,4,0">
+                            <Image x:Name="HistogramImage" Height="80" Stretch="Fill" Margin="0,0,0,8"/>
+
+                            <ToggleButton x:Name="CropToggleButton" Content="Crop" Padding="8,4" Margin="0,0,0,8"
+                                          HorizontalAlignment="Left"
+                                          Checked="CropToggle_Changed" Unchecked="CropToggle_Changed"/>
+
+                            <Expander Header="Light" IsExpanded="True" Margin="0,0,0,4">
+                                <StackPanel Margin="4">
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Exposure" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-5" Maximum="5" VerticalAlignment="Center"
+                                                Value="{Binding Exposure, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Exposure, StringFormat={}{0:0.00}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Contrast" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Contrast, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Contrast, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Highlights" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Highlights, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Highlights, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Shadows" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Shadows, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Shadows, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Whites" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Whites, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Whites, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Blacks" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Blacks, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Blacks, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Expander>
+
+                            <Expander Header="Color" Margin="0,0,0,4">
+                                <StackPanel Margin="4">
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Temperature" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Temperature, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Temperature, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Tint" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Tint, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Tint, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Vibrance" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Vibrance, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Vibrance, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Saturation" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Saturation, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Saturation, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Expander>
+
+                            <Expander Header="Effects" Margin="0,0,0,4">
+                                <StackPanel Margin="4">
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Texture" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Texture, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Texture, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Clarity" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Clarity, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Clarity, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Dehaze" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="-100" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Dehaze, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Dehaze, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Grain" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Grain, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Grain, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Glow" VerticalAlignment="Center" FontSize="11"/>
+                                        <Slider Grid.Column="1" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                Value="{Binding Glow, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Glow, StringFormat={}{0:0}}"
+                                                   VerticalAlignment="Center" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" Background="LightGray"/>
+
                 <!-- Map: shows a pin for each currently-selected file that has GPS
                      coordinates, kept in sync via UpdateMap() in MainWindow.xaml.cs. -->
-                <DockPanel Grid.Column="2" Margin="6,0,0,0">
+                <DockPanel Grid.Column="4" Margin="6,0,0,0">
                     <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Map"/>
                     <TextBlock x:Name="MapUnavailableText" DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="DarkRed"
                                Visibility="Collapsed" Margin="0,0,0,4"

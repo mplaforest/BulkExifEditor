@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using ExifBatchEditor.Imaging;
 using ExifLibrary;
 
 namespace ExifBatchEditor.Models;
@@ -19,6 +20,13 @@ public class FileEntry : INotifyPropertyChanged
     public string FileName => Path.GetFileName(FilePath);
     public ImageFile Image { get; private set; }
     public BitmapSource? Thumbnail { get; }
+
+    // Edit panel slider state - see PhotoEditState for why this is in-memory-only until
+    // SaveEdit() bakes it into the actual file.
+    public PhotoEditState Edit { get; } = new();
+
+    private float[]? _cachedGrainNoise;
+    private int _cachedGrainNoisePixelCount = -1;
 
     public bool IsDirty
     {
@@ -64,6 +72,11 @@ public class FileEntry : INotifyPropertyChanged
     public BitmapSource? LoadPreview(int pixelWidth) =>
         TryLoadBitmap(FilePath, pixelWidth, GetOrientation(Image));
 
+    // Full native resolution, no downscaling - used by the Edit panel's Save pipeline so
+    // the baked-in adjustments apply to the real image, not the small preview.
+    public BitmapSource? LoadFullResolutionBitmap() =>
+        TryLoadBitmap(FilePath, 0, GetOrientation(Image));
+
     private static BitmapSource? TryLoadBitmap(string path, int pixelWidth, int orientation)
     {
         try
@@ -76,7 +89,7 @@ public class FileEntry : INotifyPropertyChanged
             {
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.DecodePixelWidth = pixelWidth;
+                if (pixelWidth > 0) bitmap.DecodePixelWidth = pixelWidth;
                 bitmap.StreamSource = stream;
                 bitmap.EndInit();
             }
@@ -88,6 +101,94 @@ public class FileEntry : INotifyPropertyChanged
         catch
         {
             return null;
+        }
+    }
+
+    // Stable (doesn't "swim" between unrelated slider tweaks) grain noise for the live
+    // preview, regenerated only if a different pixel count is requested (e.g. the
+    // preview panel was resized). The actual save pipeline generates its own full-
+    // resolution noise separately (see SaveEdit) since the pixel counts differ.
+    public float[] GetOrCreatePreviewGrainNoise(int pixelCount)
+    {
+        if (_cachedGrainNoise == null || _cachedGrainNoisePixelCount != pixelCount)
+        {
+            _cachedGrainNoise = PhotoAdjustments.GenerateGrainNoise(pixelCount, FilePath.GetHashCode());
+            _cachedGrainNoisePixelCount = pixelCount;
+        }
+        return _cachedGrainNoise;
+    }
+
+    // Bakes the current Edit slider values into the actual file's pixels at full
+    // resolution, re-attaches the existing EXIF metadata (the pixel encode step below
+    // doesn't carry it), overwrites the file, then resets Edit back to neutral - once
+    // baked in, the adjusted pixels ARE the new "original," so there's nothing left to
+    // represent as a pending edit. Returns an error message on failure, or null on
+    // success. No-ops (returns null immediately) if nothing was actually changed.
+    public string? SaveEdit()
+    {
+        if (!Edit.HasAnyEdit) return null;
+
+        string? tempPath = null;
+        try
+        {
+            BitmapSource? original = LoadFullResolutionBitmap();
+            if (original == null) return "Could not re-read the original image to apply edits to.";
+
+            float[] grainNoise = PhotoAdjustments.GenerateGrainNoise(
+                original.PixelWidth * original.PixelHeight, FilePath.GetHashCode());
+            WriteableBitmap adjusted = PhotoAdjustments.Apply(original, Edit, grainNoise);
+
+            var encoder = new JpegBitmapEncoder { QualityLevel = 92 };
+            encoder.Frames.Add(BitmapFrame.Create(adjusted));
+
+            // Encode to a temp file first (not directly over FilePath) so a mid-write
+            // failure can't corrupt the original, and so ImageFile.FromFile below has a
+            // normal file to open rather than needing a from-stream overload.
+            tempPath = FilePath + ".newpixels.tmp";
+            using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+                encoder.Save(fs);
+
+            var newImage = ImageFile.FromFile(tempPath);
+            foreach (var prop in Image.Properties)
+                newImage.Properties.Set(prop);
+
+            SaveImageWithRetry(newImage, FilePath);
+
+            Image = newImage;
+            Edit.Reset();
+            IsDirty = false;
+            OnPropertyChanged(nameof(Image));
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return $"Could not save edited image: {ex.Message}";
+        }
+        finally
+        {
+            if (tempPath != null && File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* best-effort cleanup only */ }
+            }
+        }
+    }
+
+    // Mirrors MainWindow.xaml.cs's SaveWithRetry pattern (transient IOException from
+    // antivirus/cloud-sync briefly holding the file).
+    private static void SaveImageWithRetry(ImageFile image, string path)
+    {
+        const int maxAttempts = 4;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                image.Save(path);
+                return;
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(150 * attempt);
+            }
         }
     }
 
