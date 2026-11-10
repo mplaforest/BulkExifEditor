@@ -4,17 +4,6 @@ using System.Runtime.CompilerServices;
 
 namespace ExifBatchEditor.Models;
 
-// A crop rectangle normalized to the image's own width/height (0..1 on each edge) so the
-// same crop applies correctly whether it was drawn on a small preview or applied to the
-// full-resolution original at save time.
-public readonly record struct NormalizedCropRect(double Left, double Top, double Right, double Bottom)
-{
-    public static readonly NormalizedCropRect FullFrame = new(0, 0, 1, 1);
-
-    public bool IsFullFrame =>
-        Left <= 0.0005 && Top <= 0.0005 && Right >= 0.9995 && Bottom >= 0.9995;
-}
-
 // Per-file, in-memory-only slider state for the Edit panel. Nothing here is persisted to
 // disk on its own - it only ever reaches the file when the user clicks Save (see
 // PhotoAdjustments.Apply + SaveEdit_Click in MainWindow.xaml.cs), which bakes the current
@@ -26,7 +15,6 @@ public class PhotoEditState : INotifyPropertyChanged
     private double _exposure, _contrast, _highlights, _shadows, _whites, _blacks;
     private double _temperature, _tint, _vibrance, _saturation;
     private double _texture, _clarity, _dehaze, _grain, _glow;
-    private NormalizedCropRect _crop = NormalizedCropRect.FullFrame;
 
     // Light
     public double Exposure { get => _exposure; set => Set(ref _exposure, value); }
@@ -49,20 +37,16 @@ public class PhotoEditState : INotifyPropertyChanged
     public double Grain { get => _grain; set => Set(ref _grain, value); }
     public double Glow { get => _glow; set => Set(ref _glow, value); }
 
-    public NormalizedCropRect Crop { get => _crop; set => Set(ref _crop, value); }
-
     public bool HasAnyEdit =>
         Exposure != 0 || Contrast != 0 || Highlights != 0 || Shadows != 0 || Whites != 0 || Blacks != 0 ||
         Temperature != 0 || Tint != 0 || Vibrance != 0 || Saturation != 0 ||
-        Texture != 0 || Clarity != 0 || Dehaze != 0 || Grain != 0 || Glow != 0 ||
-        !Crop.IsFullFrame;
+        Texture != 0 || Clarity != 0 || Dehaze != 0 || Grain != 0 || Glow != 0;
 
     public void Reset()
     {
         Exposure = Contrast = Highlights = Shadows = Whites = Blacks = 0;
         Temperature = Tint = Vibrance = Saturation = 0;
         Texture = Clarity = Dehaze = Grain = Glow = 0;
-        Crop = NormalizedCropRect.FullFrame;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

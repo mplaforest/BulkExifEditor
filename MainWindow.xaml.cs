@@ -7,7 +7,6 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -53,7 +52,6 @@ public partial class MainWindow : Window
 
         _currentEntry = entry;
         EditPanelRoot.DataContext = entry;
-        CropToggleButton.IsChecked = false;
 
         if (_currentEntry != null)
             _currentEntry.Edit.PropertyChanged += EditState_PropertyChanged;
@@ -418,7 +416,6 @@ public partial class MainWindow : Window
             PreviewImage.Visibility = Visibility.Collapsed;
             PreviewPlaceholderText.Visibility = Visibility.Visible;
             HistogramImage.Source = null;
-            CropOverlayCanvas.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -453,16 +450,13 @@ public partial class MainWindow : Window
 
         float[] grainNoise = _currentEntry.GetOrCreatePreviewGrainNoise(
             _currentPreviewBase.PixelWidth * _currentPreviewBase.PixelHeight);
-        // applyCrop:false - the live preview always shows the full, uncropped image with
-        // the crop rectangle drawn as a guide on top of it; only Save actually crops.
-        WriteableBitmap adjusted = PhotoAdjustments.Apply(_currentPreviewBase, _currentEntry.Edit, grainNoise, applyCrop: false);
+        WriteableBitmap adjusted = PhotoAdjustments.Apply(_currentPreviewBase, _currentEntry.Edit, grainNoise);
 
         PreviewImage.Source = adjusted;
         PreviewImage.Visibility = Visibility.Visible;
         PreviewPlaceholderText.Visibility = Visibility.Collapsed;
 
         RenderHistogram(adjusted);
-        UpdateCropOverlayBounds();
     }
 
     private void RenderHistogram(BitmapSource adjusted)
@@ -510,161 +504,6 @@ public partial class MainWindow : Window
         HistogramImage.Source = bmp;
     }
 
-    private void PreviewHost_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateCropOverlayBounds();
-
-    // Positions/sizes CropOverlayCanvas to exactly match PreviewImage's actual rendered
-    // rect within PreviewHost - Stretch="Uniform" letterboxes rather than filling the
-    // whole cell, so the overlay can't just match the container's own bounds.
-    private void UpdateCropOverlayBounds()
-    {
-        if (PreviewImage.Source is not BitmapSource bmp)
-        {
-            CropOverlayCanvas.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        double containerW = PreviewHost.ActualWidth;
-        double containerH = PreviewHost.ActualHeight;
-        if (containerW <= 0 || containerH <= 0) return;
-
-        // Use bmp.Width/Height (DPI-corrected logical size: PixelWidth * 96/DpiX), NOT
-        // PixelWidth/PixelHeight directly - Stretch="Uniform" lays the Image out based on
-        // that logical size, and camera JPEGs very commonly embed a non-96 DPI (72 is
-        // extremely common), so using raw pixel counts here would size/position this
-        // overlay to not actually match where the image renders for any photo whose DPI
-        // isn't exactly 96.
-        double scale = Math.Min(containerW / bmp.Width, containerH / bmp.Height);
-        double renderedW = bmp.Width * scale;
-        double renderedH = bmp.Height * scale;
-
-        // CropOverlayCanvas's parent is a Grid, not a Canvas, so Canvas.Left/Top would be
-        // silently ignored here - Margin is the correct way to position it within a Grid cell.
-        CropOverlayCanvas.Margin = new Thickness((containerW - renderedW) / 2, (containerH - renderedH) / 2, 0, 0);
-        CropOverlayCanvas.Width = renderedW;
-        CropOverlayCanvas.Height = renderedH;
-
-        if (CropToggleButton.IsChecked == true)
-            PositionCropRectFromState();
-    }
-
-    private void PositionCropRectFromState()
-    {
-        if (_currentEntry == null) return;
-        var crop = _currentEntry.Edit.Crop;
-        double w = CropOverlayCanvas.Width;
-        double h = CropOverlayCanvas.Height;
-
-        // Width/Height are clamped to minSize (so they might come out larger than what
-        // crop.Left/Right literally span) - Left/Top must then also be clamped so the box
-        // still fits within the canvas, otherwise the next resize-handle drag could start
-        // from an already-invalid near-the-edge position (see CropResizeThumb_DragDelta).
-        double width = Math.Max(20, Math.Min(w, (crop.Right - crop.Left) * w));
-        double height = Math.Max(20, Math.Min(h, (crop.Bottom - crop.Top) * h));
-        double left = Math.Clamp(crop.Left * w, 0, Math.Max(0, w - width));
-        double top = Math.Clamp(crop.Top * h, 0, Math.Max(0, h - height));
-
-        Canvas.SetLeft(CropRectBorder, left);
-        Canvas.SetTop(CropRectBorder, top);
-        CropRectBorder.Width = width;
-        CropRectBorder.Height = height;
-    }
-
-    private void UpdateCropStateFromRect()
-    {
-        if (_currentEntry == null) return;
-        double w = CropOverlayCanvas.Width;
-        double h = CropOverlayCanvas.Height;
-        if (w <= 0 || h <= 0) return;
-
-        double left = Canvas.GetLeft(CropRectBorder);
-        double top = Canvas.GetTop(CropRectBorder);
-        _currentEntry.Edit.Crop = new NormalizedCropRect(
-            Clamp01(left / w), Clamp01(top / h),
-            Clamp01((left + CropRectBorder.Width) / w), Clamp01((top + CropRectBorder.Height) / h));
-    }
-
-    private static double Clamp01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
-
-    private void CropToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        bool on = CropToggleButton.IsChecked == true;
-        CropOverlayCanvas.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-        if (!on || _currentEntry == null) return;
-
-        UpdateCropOverlayBounds();
-        if (_currentEntry.Edit.Crop.IsFullFrame)
-        {
-            // First time opening crop for this file - start with a handle-sized inset
-            // from the full frame so all four corner handles are immediately visible
-            // and grabbable rather than sitting flush on the image's own edges.
-            Canvas.SetLeft(CropRectBorder, 10);
-            Canvas.SetTop(CropRectBorder, 10);
-            CropRectBorder.Width = Math.Max(20, CropOverlayCanvas.Width - 20);
-            CropRectBorder.Height = Math.Max(20, CropOverlayCanvas.Height - 20);
-            UpdateCropStateFromRect();
-        }
-    }
-
-    private void CropMoveThumb_DragDelta(object sender, DragDeltaEventArgs e)
-    {
-        double maxLeft = Math.Max(0, CropOverlayCanvas.Width - CropRectBorder.Width);
-        double maxTop = Math.Max(0, CropOverlayCanvas.Height - CropRectBorder.Height);
-        double left = Math.Clamp(Canvas.GetLeft(CropRectBorder) + e.HorizontalChange, 0, maxLeft);
-        double top = Math.Clamp(Canvas.GetTop(CropRectBorder) + e.VerticalChange, 0, maxTop);
-
-        Canvas.SetLeft(CropRectBorder, left);
-        Canvas.SetTop(CropRectBorder, top);
-        UpdateCropStateFromRect();
-    }
-
-    // Bug fixed here: Math.Clamp throws ArgumentException if its min argument ends up
-    // greater than its max - which happened for the right/bottom-edge cases whenever the
-    // box's OPPOSITE edge was already within minSize of the canvas boundary (e.g.
-    // dragging the bottom-right handle while the box's left edge sits near the canvas's
-    // right edge). That exception aborted the handler before it reached
-    // UpdateCropStateFromRect/Canvas.SetLeft/Width, so the resize appeared to silently
-    // "stick" partway through. Every clamp below now has its upper bound passed through
-    // Math.Max/Math.Min against the lower bound first, so min<=max always holds
-    // regardless of the box's current position - it can never throw.
-    private void CropResizeThumb_DragDelta(object sender, DragDeltaEventArgs e)
-    {
-        if (sender is not Thumb thumb) return;
-        const double minSize = 20;
-        double canvasW = CropOverlayCanvas.Width;
-        double canvasH = CropOverlayCanvas.Height;
-
-        double left = Canvas.GetLeft(CropRectBorder);
-        double top = Canvas.GetTop(CropRectBorder);
-        double right = left + CropRectBorder.Width;
-        double bottom = top + CropRectBorder.Height;
-
-        switch (thumb.Tag as string)
-        {
-            case "TopLeft":
-                left = Math.Clamp(left + e.HorizontalChange, 0, Math.Max(0, right - minSize));
-                top = Math.Clamp(top + e.VerticalChange, 0, Math.Max(0, bottom - minSize));
-                break;
-            case "TopRight":
-                right = Math.Clamp(right + e.HorizontalChange, Math.Min(canvasW, left + minSize), canvasW);
-                top = Math.Clamp(top + e.VerticalChange, 0, Math.Max(0, bottom - minSize));
-                break;
-            case "BottomLeft":
-                left = Math.Clamp(left + e.HorizontalChange, 0, Math.Max(0, right - minSize));
-                bottom = Math.Clamp(bottom + e.VerticalChange, Math.Min(canvasH, top + minSize), canvasH);
-                break;
-            case "BottomRight":
-                right = Math.Clamp(right + e.HorizontalChange, Math.Min(canvasW, left + minSize), canvasW);
-                bottom = Math.Clamp(bottom + e.VerticalChange, Math.Min(canvasH, top + minSize), canvasH);
-                break;
-        }
-
-        Canvas.SetLeft(CropRectBorder, left);
-        Canvas.SetTop(CropRectBorder, top);
-        CropRectBorder.Width = Math.Max(minSize, right - left);
-        CropRectBorder.Height = Math.Max(minSize, bottom - top);
-        UpdateCropStateFromRect();
-    }
-
     private void SaveEdit_Click(object sender, RoutedEventArgs e)
     {
         if (_currentEntry == null) return;
@@ -684,7 +523,6 @@ public partial class MainWindow : Window
         // The file's actual pixels changed, so the cached preview base needs reloading
         // too, not just the (already-reset-by-SaveEdit) slider values.
         _currentPreviewBase = _currentEntry.LoadPreview(PreviewPixelWidth);
-        CropToggleButton.IsChecked = false;
         RenderEditedPreview();
         ShowStatus($"Saved edits to {_currentEntry.FileName}.");
     }
@@ -692,7 +530,6 @@ public partial class MainWindow : Window
     private void RevertEdit_Click(object sender, RoutedEventArgs e)
     {
         if (_currentEntry == null) return;
-        CropToggleButton.IsChecked = false;
         _currentEntry.Edit.Reset();
         ShowStatus("Reverted edits.");
     }

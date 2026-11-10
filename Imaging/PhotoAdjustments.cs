@@ -17,15 +17,7 @@ public static class PhotoAdjustments
     // here so the speckle pattern stays stable across recomputes triggered by *other*
     // sliders - regenerating it from a fresh Random every call would make the grain
     // visibly "swim" every time any unrelated slider moved.
-    //
-    // applyCrop=false is used for the live on-screen preview while editing: cropping the
-    // actual displayed bitmap on every drag tick while the user is still positioning the
-    // crop rectangle made the image itself shrink mid-drag, which threw off the overlay's
-    // own size/position calculations (they're based on PreviewImage.Source's dimensions)
-    // and broke the whole interaction. The live preview always shows the full, uncropped,
-    // adjusted image - only FileEntry.SaveEdit() (which calls this with the default
-    // applyCrop=true) actually crops the real output.
-    public static WriteableBitmap Apply(BitmapSource source, PhotoEditState state, float[]? grainNoise, bool applyCrop = true)
+    public static WriteableBitmap Apply(BitmapSource source, PhotoEditState state, float[]? grainNoise)
     {
         int width = source.PixelWidth;
         int height = source.PixelHeight;
@@ -67,11 +59,8 @@ public static class PhotoAdjustments
             // alpha (p+3) untouched - stays opaque
         }
 
-        var result = applyCrop
-            ? CropIfNeeded(pixels, width, height, stride, state.Crop)
-            : (Pixels: pixels, Width: width, Height: height, Stride: stride);
-        var bmp = new WriteableBitmap(result.Width, result.Height, source.DpiX, source.DpiY, PixelFormats.Bgra32, null);
-        bmp.WritePixels(new Int32Rect(0, 0, result.Width, result.Height), result.Pixels, result.Stride, 0);
+        var bmp = new WriteableBitmap(width, height, source.DpiX, source.DpiY, PixelFormats.Bgra32, null);
+        bmp.WritePixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
         bmp.Freeze();
         return bmp;
     }
@@ -293,31 +282,6 @@ public static class PhotoAdjustments
                 }
             }
         }
-    }
-
-    private static (byte[] Pixels, int Width, int Height, int Stride) CropIfNeeded(
-        byte[] pixels, int width, int height, int stride, NormalizedCropRect crop)
-    {
-        if (crop.IsFullFrame) return (pixels, width, height, stride);
-
-        int left = Clamp((int)Math.Round(crop.Left * width), 0, width - 1);
-        int top = Clamp((int)Math.Round(crop.Top * height), 0, height - 1);
-        int right = Clamp((int)Math.Round(crop.Right * width), left + 1, width);
-        int bottom = Clamp((int)Math.Round(crop.Bottom * height), top + 1, height);
-
-        int cropWidth = right - left;
-        int cropHeight = bottom - top;
-        int cropStride = cropWidth * 4;
-        var cropped = new byte[cropHeight * cropStride];
-
-        for (int row = 0; row < cropHeight; row++)
-        {
-            int srcOffset = (top + row) * stride + left * 4;
-            int dstOffset = row * cropStride;
-            Array.Copy(pixels, srcOffset, cropped, dstOffset, cropStride);
-        }
-
-        return (cropped, cropWidth, cropHeight, cropStride);
     }
 
     // Computes a 256-bucket luminance histogram (0-255) - used by the pipeline test

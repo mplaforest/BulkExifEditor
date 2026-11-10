@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="EXIF Batch Metadata Editor v3.0.3" Height="1100" Width="1740"
+        Title="EXIF Batch Metadata Editor v3.0.4" Height="1100" Width="1740"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -205,45 +205,11 @@
                      shows the live result of the Edit panel's sliders for the selected file. -->
                 <DockPanel Grid.Column="0" Margin="0,0,6,0">
                     <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4" FontWeight="Bold" TextWrapping="Wrap" Text="Preview"/>
-                    <Grid x:Name="PreviewHost" SizeChanged="PreviewHost_SizeChanged">
+                    <Grid x:Name="PreviewHost">
                         <TextBlock x:Name="PreviewPlaceholderText" Text="Hover over a thumbnail to preview"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    Foreground="Gray" FontStyle="Italic" TextWrapping="Wrap" TextAlignment="Center"/>
                         <Image x:Name="PreviewImage" Stretch="Uniform" Visibility="Collapsed"/>
-
-                        <!-- Positioned/sized in code (UpdateCropOverlayBounds) to exactly match
-                             PreviewImage's actual rendered rect within this cell - Stretch="Uniform"
-                             letterboxes, so this can't just fill the whole Grid cell. -->
-                        <!-- Parent is a Grid, not a Canvas, so Canvas.Left/Top have no effect on
-                             this element itself - positioned via Margin in code instead (see
-                             UpdateCropOverlayBounds). Not clipped, so resize handles near the
-                             image's own edge stay fully hit-testable rather than being cut off. -->
-                        <Canvas x:Name="CropOverlayCanvas" Visibility="Collapsed"
-                                HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <Border x:Name="CropRectBorder" BorderBrush="White" BorderThickness="1.5"
-                                    Background="#01000000">
-                                <Grid>
-                                    <Thumb x:Name="CropMoveThumb" Background="Transparent"
-                                           DragDelta="CropMoveThumb_DragDelta" Cursor="SizeAll"/>
-                                    <Thumb x:Name="CropTopLeftThumb" Width="12" Height="12" Background="White"
-                                           HorizontalAlignment="Left" VerticalAlignment="Top"
-                                           Margin="-6,-6,0,0" Cursor="SizeNWSE"
-                                           DragDelta="CropResizeThumb_DragDelta" Tag="TopLeft"/>
-                                    <Thumb x:Name="CropTopRightThumb" Width="12" Height="12" Background="White"
-                                           HorizontalAlignment="Right" VerticalAlignment="Top"
-                                           Margin="0,-6,-6,0" Cursor="SizeNESW"
-                                           DragDelta="CropResizeThumb_DragDelta" Tag="TopRight"/>
-                                    <Thumb x:Name="CropBottomLeftThumb" Width="12" Height="12" Background="White"
-                                           HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                           Margin="-6,0,0,-6" Cursor="SizeNESW"
-                                           DragDelta="CropResizeThumb_DragDelta" Tag="BottomLeft"/>
-                                    <Thumb x:Name="CropBottomRightThumb" Width="12" Height="12" Background="White"
-                                           HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                           Margin="0,0,-6,-6" Cursor="SizeNWSE"
-                                           DragDelta="CropResizeThumb_DragDelta" Tag="BottomRight"/>
-                                </Grid>
-                            </Border>
-                        </Canvas>
                     </Grid>
                 </DockPanel>
 
@@ -265,10 +231,6 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding Edit}">
                         <StackPanel Margin="0,0,4,0">
                             <Image x:Name="HistogramImage" Height="80" Stretch="Fill" Margin="0,0,0,8"/>
-
-                            <ToggleButton x:Name="CropToggleButton" Content="Crop" Padding="8,4" Margin="0,0,0,8"
-                                          HorizontalAlignment="Left"
-                                          Checked="CropToggle_Changed" Unchecked="CropToggle_Changed"/>
 
                             <Expander Header="Light" IsExpanded="True" Margin="0,0,0,4">
                                 <StackPanel Margin="4">
