@@ -718,6 +718,11 @@ public partial class MainWindow : Window
                 "Find and replace errors", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
+    private void SelectAll_Click(object sender, RoutedEventArgs e)
+    {
+        FileListBox.SelectAll();
+    }
+
     // DateTimeOriginal (when the photo was actually taken) if present; falls back to the
     // file's own last-write time for files with no such EXIF tag.
     private static DateTime GetCaptureDate(FileEntry entry)
