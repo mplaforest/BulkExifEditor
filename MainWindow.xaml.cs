@@ -527,9 +527,15 @@ public partial class MainWindow : Window
         double containerH = PreviewHost.ActualHeight;
         if (containerW <= 0 || containerH <= 0) return;
 
-        double scale = Math.Min(containerW / bmp.PixelWidth, containerH / bmp.PixelHeight);
-        double renderedW = bmp.PixelWidth * scale;
-        double renderedH = bmp.PixelHeight * scale;
+        // Use bmp.Width/Height (DPI-corrected logical size: PixelWidth * 96/DpiX), NOT
+        // PixelWidth/PixelHeight directly - Stretch="Uniform" lays the Image out based on
+        // that logical size, and camera JPEGs very commonly embed a non-96 DPI (72 is
+        // extremely common), so using raw pixel counts here would size/position this
+        // overlay to not actually match where the image renders for any photo whose DPI
+        // isn't exactly 96.
+        double scale = Math.Min(containerW / bmp.Width, containerH / bmp.Height);
+        double renderedW = bmp.Width * scale;
+        double renderedH = bmp.Height * scale;
 
         // CropOverlayCanvas's parent is a Grid, not a Canvas, so Canvas.Left/Top would be
         // silently ignored here - Margin is the correct way to position it within a Grid cell.
@@ -548,10 +554,19 @@ public partial class MainWindow : Window
         double w = CropOverlayCanvas.Width;
         double h = CropOverlayCanvas.Height;
 
-        Canvas.SetLeft(CropRectBorder, crop.Left * w);
-        Canvas.SetTop(CropRectBorder, crop.Top * h);
-        CropRectBorder.Width = Math.Max(20, (crop.Right - crop.Left) * w);
-        CropRectBorder.Height = Math.Max(20, (crop.Bottom - crop.Top) * h);
+        // Width/Height are clamped to minSize (so they might come out larger than what
+        // crop.Left/Right literally span) - Left/Top must then also be clamped so the box
+        // still fits within the canvas, otherwise the next resize-handle drag could start
+        // from an already-invalid near-the-edge position (see CropResizeThumb_DragDelta).
+        double width = Math.Max(20, Math.Min(w, (crop.Right - crop.Left) * w));
+        double height = Math.Max(20, Math.Min(h, (crop.Bottom - crop.Top) * h));
+        double left = Math.Clamp(crop.Left * w, 0, Math.Max(0, w - width));
+        double top = Math.Clamp(crop.Top * h, 0, Math.Max(0, h - height));
+
+        Canvas.SetLeft(CropRectBorder, left);
+        Canvas.SetTop(CropRectBorder, top);
+        CropRectBorder.Width = width;
+        CropRectBorder.Height = height;
     }
 
     private void UpdateCropStateFromRect()
@@ -602,10 +617,21 @@ public partial class MainWindow : Window
         UpdateCropStateFromRect();
     }
 
+    // Bug fixed here: Math.Clamp throws ArgumentException if its min argument ends up
+    // greater than its max - which happened for the right/bottom-edge cases whenever the
+    // box's OPPOSITE edge was already within minSize of the canvas boundary (e.g.
+    // dragging the bottom-right handle while the box's left edge sits near the canvas's
+    // right edge). That exception aborted the handler before it reached
+    // UpdateCropStateFromRect/Canvas.SetLeft/Width, so the resize appeared to silently
+    // "stick" partway through. Every clamp below now has its upper bound passed through
+    // Math.Max/Math.Min against the lower bound first, so min<=max always holds
+    // regardless of the box's current position - it can never throw.
     private void CropResizeThumb_DragDelta(object sender, DragDeltaEventArgs e)
     {
         if (sender is not Thumb thumb) return;
         const double minSize = 20;
+        double canvasW = CropOverlayCanvas.Width;
+        double canvasH = CropOverlayCanvas.Height;
 
         double left = Canvas.GetLeft(CropRectBorder);
         double top = Canvas.GetTop(CropRectBorder);
@@ -615,27 +641,27 @@ public partial class MainWindow : Window
         switch (thumb.Tag as string)
         {
             case "TopLeft":
-                left = Math.Clamp(left + e.HorizontalChange, 0, right - minSize);
-                top = Math.Clamp(top + e.VerticalChange, 0, bottom - minSize);
+                left = Math.Clamp(left + e.HorizontalChange, 0, Math.Max(0, right - minSize));
+                top = Math.Clamp(top + e.VerticalChange, 0, Math.Max(0, bottom - minSize));
                 break;
             case "TopRight":
-                right = Math.Clamp(right + e.HorizontalChange, left + minSize, CropOverlayCanvas.Width);
-                top = Math.Clamp(top + e.VerticalChange, 0, bottom - minSize);
+                right = Math.Clamp(right + e.HorizontalChange, Math.Min(canvasW, left + minSize), canvasW);
+                top = Math.Clamp(top + e.VerticalChange, 0, Math.Max(0, bottom - minSize));
                 break;
             case "BottomLeft":
-                left = Math.Clamp(left + e.HorizontalChange, 0, right - minSize);
-                bottom = Math.Clamp(bottom + e.VerticalChange, top + minSize, CropOverlayCanvas.Height);
+                left = Math.Clamp(left + e.HorizontalChange, 0, Math.Max(0, right - minSize));
+                bottom = Math.Clamp(bottom + e.VerticalChange, Math.Min(canvasH, top + minSize), canvasH);
                 break;
             case "BottomRight":
-                right = Math.Clamp(right + e.HorizontalChange, left + minSize, CropOverlayCanvas.Width);
-                bottom = Math.Clamp(bottom + e.VerticalChange, top + minSize, CropOverlayCanvas.Height);
+                right = Math.Clamp(right + e.HorizontalChange, Math.Min(canvasW, left + minSize), canvasW);
+                bottom = Math.Clamp(bottom + e.VerticalChange, Math.Min(canvasH, top + minSize), canvasH);
                 break;
         }
 
         Canvas.SetLeft(CropRectBorder, left);
         Canvas.SetTop(CropRectBorder, top);
-        CropRectBorder.Width = right - left;
-        CropRectBorder.Height = bottom - top;
+        CropRectBorder.Width = Math.Max(minSize, right - left);
+        CropRectBorder.Height = Math.Max(minSize, bottom - top);
         UpdateCropStateFromRect();
     }
 
