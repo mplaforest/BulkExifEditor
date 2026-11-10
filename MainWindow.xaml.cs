@@ -465,27 +465,40 @@ public partial class MainWindow : Window
 
     private void RenderHistogram(BitmapSource adjusted)
     {
-        int[] buckets = PhotoAdjustments.ComputeLuminanceHistogram(adjusted);
-        int max = Math.Max(1, buckets.Max());
+        var (rHist, gHist, bHist) = PhotoAdjustments.ComputeRgbHistograms(adjusted);
+        int max = Math.Max(1, Math.Max(rHist.Max(), Math.Max(gHist.Max(), bHist.Max())));
 
         const int w = 256, h = 80;
+        const byte bg = 24, bright = 235;
         var pixels = new byte[w * h * 4];
         for (int i = 0; i < pixels.Length; i += 4)
         {
-            pixels[i] = 24; pixels[i + 1] = 24; pixels[i + 2] = 24; pixels[i + 3] = 255;
+            pixels[i] = bg; pixels[i + 1] = bg; pixels[i + 2] = bg; pixels[i + 3] = 255;
         }
+
+        // Square-root scale, not linear - a photo's histogram is usually dominated by one
+        // or two tall spikes that would otherwise flatten every other bucket down to an
+        // invisible sliver.
+        int BarHeight(int[] hist, int x) => (int)(Math.Sqrt((double)hist[x] / max) * (h - 1));
 
         for (int x = 0; x < w; x++)
         {
-            // Square-root scale, not linear - a photo's luminance histogram is usually
-            // dominated by one or two tall spikes that would otherwise flatten every
-            // other bucket down to an invisible sliver.
-            int barHeight = (int)(Math.Sqrt((double)buckets[x] / max) * (h - 1));
-            for (int y = 0; y < barHeight; y++)
+            int rh = BarHeight(rHist, x);
+            int gh = BarHeight(gHist, x);
+            int bh = BarHeight(bHist, x);
+            int colHeight = Math.Max(rh, Math.Max(gh, bh));
+
+            for (int y = 0; y < colHeight; y++)
             {
                 int py = h - 1 - y;
                 int idx = (py * w + x) * 4;
-                pixels[idx] = 210; pixels[idx + 1] = 210; pixels[idx + 2] = 210; pixels[idx + 3] = 255;
+                // Each channel contributes its own color wherever its own bar reaches
+                // this height - overlapping channels combine (e.g. R+G = yellow, all
+                // three = white/gray), the same convention Lightroom/Photoshop use.
+                pixels[idx] = y < bh ? bright : bg;         // B (BGRA order)
+                pixels[idx + 1] = y < gh ? bright : bg;     // G
+                pixels[idx + 2] = y < rh ? bright : bg;     // R
+                pixels[idx + 3] = 255;
             }
         }
 
@@ -653,6 +666,18 @@ public partial class MainWindow : Window
         CropToggleButton.IsChecked = false;
         _currentEntry.Edit.Reset();
         ShowStatus("Reverted edits.");
+    }
+
+    // The slider value TextBoxes default to committing on LostFocus (TextBox.Text's
+    // normal default) rather than PropertyChanged, specifically so the live-reformatting
+    // (e.g. "1.5" becoming "1.50") doesn't fight the user while they're still typing -
+    // this just makes Enter commit immediately too, same pattern as the filename editor.
+    private void SliderValueBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || sender is not TextBox tb) return;
+        e.Handled = true;
+        tb.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        Keyboard.ClearFocus();
     }
 
     private void Thumbnail_MouseEnter(object sender, MouseEventArgs e)

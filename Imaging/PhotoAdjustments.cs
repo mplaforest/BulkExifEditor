@@ -310,24 +310,35 @@ public static class PhotoAdjustments
         return (cropped, cropWidth, cropHeight, cropStride);
     }
 
-    // Computes a 256-bucket luminance histogram (0-255), used by the Edit panel's
-    // histogram display. Deliberately simple (luminance only, not separate R/G/B
-    // curves) to keep it cheap enough to recompute on every slider tick.
+    // Computes a 256-bucket luminance histogram (0-255) - used by the pipeline test
+    // harness and anywhere only an overall tonal distribution is needed.
     public static int[] ComputeLuminanceHistogram(BitmapSource source)
+    {
+        var (r, g, b) = ComputeRgbHistograms(source);
+        var buckets = new int[256];
+        for (int i = 0; i < 256; i++) buckets[i] = (r[i] + g[i] + b[i]) / 3;
+        return buckets;
+    }
+
+    // Separate per-channel histograms (0-255 each) for the Edit panel's color histogram
+    // display.
+    public static (int[] R, int[] G, int[] B) ComputeRgbHistograms(BitmapSource source)
     {
         var converted = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
         int stride = source.PixelWidth * 4;
         var pixels = new byte[source.PixelHeight * stride];
         converted.CopyPixels(pixels, stride, 0);
 
-        var buckets = new int[256];
+        var r = new int[256];
+        var g = new int[256];
+        var b = new int[256];
         for (int p = 0; p < pixels.Length; p += 4)
         {
-            byte bl = pixels[p], gr = pixels[p + 1], rd = pixels[p + 2];
-            int lum = (int)(0.299 * rd + 0.587 * gr + 0.114 * bl);
-            buckets[Clamp(lum, 0, 255)]++;
+            b[pixels[p]]++;
+            g[pixels[p + 1]]++;
+            r[pixels[p + 2]]++;
         }
-        return buckets;
+        return (r, g, b);
     }
 
     private static float SmoothStep(float edge0, float edge1, float x)
