@@ -17,7 +17,15 @@ public static class PhotoAdjustments
     // here so the speckle pattern stays stable across recomputes triggered by *other*
     // sliders - regenerating it from a fresh Random every call would make the grain
     // visibly "swim" every time any unrelated slider moved.
-    public static WriteableBitmap Apply(BitmapSource source, PhotoEditState state, float[]? grainNoise)
+    //
+    // applyCrop=false is used for the live on-screen preview while editing: cropping the
+    // actual displayed bitmap on every drag tick while the user is still positioning the
+    // crop rectangle made the image itself shrink mid-drag, which threw off the overlay's
+    // own size/position calculations (they're based on PreviewImage.Source's dimensions)
+    // and broke the whole interaction. The live preview always shows the full, uncropped,
+    // adjusted image - only FileEntry.SaveEdit() (which calls this with the default
+    // applyCrop=true) actually crops the real output.
+    public static WriteableBitmap Apply(BitmapSource source, PhotoEditState state, float[]? grainNoise, bool applyCrop = true)
     {
         int width = source.PixelWidth;
         int height = source.PixelHeight;
@@ -59,7 +67,9 @@ public static class PhotoAdjustments
             // alpha (p+3) untouched - stays opaque
         }
 
-        var result = CropIfNeeded(pixels, width, height, stride, state.Crop);
+        var result = applyCrop
+            ? CropIfNeeded(pixels, width, height, stride, state.Crop)
+            : (Pixels: pixels, Width: width, Height: height, Stride: stride);
         var bmp = new WriteableBitmap(result.Width, result.Height, source.DpiX, source.DpiY, PixelFormats.Bgra32, null);
         bmp.WritePixels(new Int32Rect(0, 0, result.Width, result.Height), result.Pixels, result.Stride, 0);
         bmp.Freeze();

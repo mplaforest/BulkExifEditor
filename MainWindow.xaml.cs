@@ -453,7 +453,9 @@ public partial class MainWindow : Window
 
         float[] grainNoise = _currentEntry.GetOrCreatePreviewGrainNoise(
             _currentPreviewBase.PixelWidth * _currentPreviewBase.PixelHeight);
-        WriteableBitmap adjusted = PhotoAdjustments.Apply(_currentPreviewBase, _currentEntry.Edit, grainNoise);
+        // applyCrop:false - the live preview always shows the full, uncropped image with
+        // the crop rectangle drawn as a guide on top of it; only Save actually crops.
+        WriteableBitmap adjusted = PhotoAdjustments.Apply(_currentPreviewBase, _currentEntry.Edit, grainNoise, applyCrop: false);
 
         PreviewImage.Source = adjusted;
         PreviewImage.Visibility = Visibility.Visible;
@@ -529,8 +531,9 @@ public partial class MainWindow : Window
         double renderedW = bmp.PixelWidth * scale;
         double renderedH = bmp.PixelHeight * scale;
 
-        Canvas.SetLeft(CropOverlayCanvas, (containerW - renderedW) / 2);
-        Canvas.SetTop(CropOverlayCanvas, (containerH - renderedH) / 2);
+        // CropOverlayCanvas's parent is a Grid, not a Canvas, so Canvas.Left/Top would be
+        // silently ignored here - Margin is the correct way to position it within a Grid cell.
+        CropOverlayCanvas.Margin = new Thickness((containerW - renderedW) / 2, (containerH - renderedH) / 2, 0, 0);
         CropOverlayCanvas.Width = renderedW;
         CropOverlayCanvas.Height = renderedH;
 
