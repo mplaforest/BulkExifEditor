@@ -856,6 +856,7 @@ public partial class MainWindow : Window
         var dlg = new BulkRenameWindow { Owner = this };
         if (dlg.ShowDialog() != true) return;
         string baseName = dlg.ResultBaseName;
+        int startNumber = dlg.ResultStartNumber;
 
         var ordered = targets.OrderBy(GetCaptureDate).ToList();
 
@@ -865,7 +866,7 @@ public partial class MainWindow : Window
         for (int i = 0; i < ordered.Count; i++)
         {
             var entry = ordered[i];
-            string newName = $"{baseName}-{i + 1:D3}{Path.GetExtension(entry.FileName)}";
+            string newName = $"{baseName}-{startNumber + i:D3}{Path.GetExtension(entry.FileName)}";
 
             string? error = entry.Rename(newName);
             if (error != null)

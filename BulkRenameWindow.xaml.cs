@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 
 namespace ExifBatchEditor;
@@ -5,6 +6,7 @@ namespace ExifBatchEditor;
 public partial class BulkRenameWindow : Window
 {
     public string ResultBaseName { get; private set; } = string.Empty;
+    public int ResultStartNumber { get; private set; } = 1;
 
     public BulkRenameWindow()
     {
@@ -21,7 +23,14 @@ public partial class BulkRenameWindow : Window
             return;
         }
 
+        if (!int.TryParse(StartNumberBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int start) || start < 1)
+        {
+            MessageBox.Show(this, "Start number must be a whole number of 1 or more.", "Bulk Rename", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         ResultBaseName = name;
+        ResultStartNumber = start;
         DialogResult = true;
     }
 
