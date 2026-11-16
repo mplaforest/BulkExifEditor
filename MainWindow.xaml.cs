@@ -927,6 +927,15 @@ public partial class MainWindow : Window
         FileListBox.SelectAll();
     }
 
+    // Used by the "Only fill empty fields" checkbox (CommitRowEdit) to decide whether a
+    // given selected file should be skipped rather than overwritten.
+    private static bool EntryHasValue(FileEntry entry, ExifTag tag)
+    {
+        if (!entry.Image.Properties.Contains(tag)) return false;
+        string text = entry.Image.Properties.Get(tag).ToString() ?? "";
+        return !string.IsNullOrWhiteSpace(text);
+    }
+
     // DateTimeOriginal (when the photo was actually taken) if present; falls back to the
     // file's own last-write time for files with no such EXIF tag.
     private static DateTime GetCaptureDate(FileEntry entry)
@@ -1311,8 +1320,17 @@ public partial class MainWindow : Window
         var saveErrors = new List<string>();
         int applied = 0;
 
+        bool onlyFillEmpty = OnlyFillEmptyCheckBox.IsChecked == true;
+        int skipped = 0;
+
         foreach (var entry in targets)
         {
+            if (onlyFillEmpty && EntryHasValue(entry, row.Tag))
+            {
+                skipped++;
+                continue;
+            }
+
             ExifProperty newProp;
             ExifProperty? refProp = null;
             try
@@ -1353,6 +1371,14 @@ public partial class MainWindow : Window
 
         if (applied == 0)
         {
+            // All targets were deliberately skipped (already had a value, and "only fill
+            // empty" is on) rather than having actually failed - that's not an error.
+            if (skipped > 0 && parseErrors.Count == 0 && saveErrors.Count == 0)
+            {
+                ShowStatus($"{row.Name}: all {skipped} selected file(s) already had a value - none changed.");
+                return;
+            }
+
             // Leave the typed text in place rather than rebuilding the grid (which tears
             // down and regenerates every row's controls) - the user can just fix it and
             // the field will lose focus again to retry.
@@ -1377,6 +1403,7 @@ public partial class MainWindow : Window
 
         ShowStatus(multi
             ? $"{row.Name} saved to {applied} of {targets.Count} file(s)."
+                + (skipped > 0 ? $" ({skipped} already had a value, skipped)" : "")
             : $"{row.Name} saved.");
 
         if (row.Tag == ExifTag.GPSLatitude || row.Tag == ExifTag.GPSLongitude)
