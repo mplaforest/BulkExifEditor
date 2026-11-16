@@ -1427,11 +1427,19 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog() != true || dlg.Result == null) return;
 
         bool multi = targets.Count > 1;
+        bool onlyFillEmpty = OnlyFillEmptyCheckBox.IsChecked == true;
         var errors = new List<string>();
         int applied = 0;
+        int skipped = 0;
 
         foreach (var entry in targets)
         {
+            if (onlyFillEmpty && EntryHasValue(entry, dlg.ResultTag))
+            {
+                skipped++;
+                continue;
+            }
+
             try
             {
                 // Set() replaces any existing entry for this tag and adds it if not
@@ -1457,7 +1465,9 @@ public partial class MainWindow : Window
 
         ShowStatus(multi
             ? $"Added tag to {applied} of {targets.Count} file(s) and saved."
-            : applied > 0 ? $"Added tag to {targets[0].FileName} and saved." : "");
+                + (skipped > 0 ? $" ({skipped} already had a value, skipped)" : "")
+            : applied > 0 ? $"Added tag to {targets[0].FileName} and saved."
+                : skipped > 0 ? "Already had a value - skipped." : "");
         if (errors.Count > 0)
             MessageBox.Show(this, "Some files had problems:\n" + string.Join("\n", errors),
                 "Add tag errors", MessageBoxButton.OK, MessageBoxImage.Warning);
