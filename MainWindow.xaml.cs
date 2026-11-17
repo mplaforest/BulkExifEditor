@@ -794,6 +794,7 @@ public partial class MainWindow : Window
         CurrentTags.Clear();
         UpdateMap();
         ShowPreviewFor(null);
+        UpdateSelectedCountText();
     }
 
     private void RotateLeft_Click(object sender, RoutedEventArgs e) => RotateSelected(RotationKind.Left90);
@@ -1020,6 +1021,18 @@ public partial class MainWindow : Window
         RefreshCurrentTags();
         UpdateMap();
         ShowPreviewFor(_currentEntry);
+        UpdateSelectedCountText();
+    }
+
+    private void UpdateSelectedCountText()
+    {
+        int count = FileListBox.SelectedItems.Count;
+        SelectedCountText.Text = count switch
+        {
+            0 => "",
+            1 => "1 selected",
+            _ => $"{count} selected",
+        };
     }
 
     // Attribution tags shown first, always present as a real value or a blank editable
