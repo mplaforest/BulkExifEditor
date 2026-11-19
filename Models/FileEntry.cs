@@ -45,11 +45,30 @@ public class FileEntry : INotifyPropertyChanged
 
     public string DisplayName => IsDirty ? FileName + " *" : FileName;
 
+    // Drives the small GPS status badge in the file list (see MainWindow.xaml) - kept up
+    // to date by calling RefreshGpsStatus() after any edit that could add/remove GPS
+    // tags (GPS field edits, Add Tag, Remove Tag, map-click-to-set-location).
+    public bool HasGps { get; private set; }
+    public bool MissingGps => !HasGps;
+
     public FileEntry(string path)
     {
         FilePath = path;
         Image = ImageFile.FromFile(path);
         Thumbnail = TryLoadThumbnail(path, GetOrientation(Image));
+        HasGps = ComputeHasGps(Image);
+    }
+
+    private static bool ComputeHasGps(ImageFile image) =>
+        image.Properties.Contains(ExifTag.GPSLatitude) && image.Properties.Contains(ExifTag.GPSLongitude);
+
+    public void RefreshGpsStatus()
+    {
+        bool has = ComputeHasGps(Image);
+        if (has == HasGps) return;
+        HasGps = has;
+        OnPropertyChanged(nameof(HasGps));
+        OnPropertyChanged(nameof(MissingGps));
     }
 
     private static int GetOrientation(ImageFile image)

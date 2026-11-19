@@ -177,6 +177,7 @@ public partial class MainWindow : Window
 
                 SaveWithRetry(entry);
                 entry.IsDirty = false;
+                entry.RefreshGpsStatus();
                 applied++;
             }
             catch (Exception ex)
@@ -1373,6 +1374,7 @@ public partial class MainWindow : Window
                 // That inconsistency repeatedly looked like "this field isn't saving".
                 SaveWithRetry(entry);
                 entry.IsDirty = false;
+                entry.RefreshGpsStatus();
 
                 applied++;
             }
@@ -1465,6 +1467,7 @@ public partial class MainWindow : Window
                 // Always save immediately, same as CommitRowEdit - see its comment for why.
                 SaveWithRetry(entry);
                 entry.IsDirty = false;
+                entry.RefreshGpsStatus();
 
                 applied++;
             }
@@ -1510,6 +1513,7 @@ public partial class MainWindow : Window
                 // Always save immediately, same as CommitRowEdit - see its comment for why.
                 SaveWithRetry(entry);
                 entry.IsDirty = false;
+                entry.RefreshGpsStatus();
 
                 applied++;
             }

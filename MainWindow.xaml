@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:ExifBatchEditor.Converters"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="EXIF Batch Metadata Editor v3.0.11" Height="1100" Width="1740"
+        Title="EXIF Batch Metadata Editor v3.0.12" Height="1100" Width="1740"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <conv:PlaceholderVisibilityConverter x:Key="PlaceholderVisibilityConverter"/>
@@ -73,6 +73,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Border Grid.Column="0" Width="40" Height="40" Background="#22000000" Margin="0,0,8,0"
                                         MouseEnter="Thumbnail_MouseEnter" MouseLeave="Thumbnail_MouseLeave">
@@ -91,6 +92,24 @@
                                 <TextBlock Grid.Column="2" Text=" *" VerticalAlignment="Center" FontWeight="Bold"
                                            Foreground="DarkRed"
                                            Visibility="{Binding IsDirty, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                <!-- Small GPS status badge - green circle when the photo has
+                                     GPSLatitude/GPSLongitude, red circle-with-slash when it doesn't
+                                     (see FileEntry.HasGps/MissingGps/RefreshGpsStatus). -->
+                                <Grid Grid.Column="3" Width="22" Height="22" Margin="4,0,0,0" VerticalAlignment="Center"
+                                      ToolTip="Has GPS location data"
+                                      Visibility="{Binding HasGps, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <Ellipse Stroke="Green" StrokeThickness="1.5" Fill="White"/>
+                                    <TextBlock Text="GPS" FontSize="6" FontWeight="Bold" Foreground="Black"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Grid.Column="3" Width="22" Height="22" Margin="4,0,0,0" VerticalAlignment="Center"
+                                      ToolTip="No GPS location data"
+                                      Visibility="{Binding MissingGps, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <Ellipse Stroke="Red" StrokeThickness="1.5" Fill="White"/>
+                                    <TextBlock Text="GPS" FontSize="6" FontWeight="Bold" Foreground="Black"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <Line X1="3" Y1="3" X2="19" Y2="19" Stroke="Red" StrokeThickness="1.5"/>
+                                </Grid>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
